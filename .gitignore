@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# Node build scratch (contains a symlink into a machine-local cache)
+work/
+
+# Collected data — generated at runtime, not source
+data.xlsx
+
+# Pre-conversion video originals kept only as a local safety copy
+videos/_original_backup/
