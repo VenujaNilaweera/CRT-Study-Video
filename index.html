@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -8,73 +8,240 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --ink: #0E2A2F; --ink-2: #16383E; --paper: #F7F9F8; --line: #D7E0DE;
-    --teal: #1E7A6F; --teal-soft: #E3F0ED; --pulse: #D8352A; --pulse-soft: #FBE9E7;
-    --mut: #5C7370; --mono: 'JetBrains Mono', monospace;
+    --ink: #0E2A2F;
+    --ink-2: #16383E;
+    --paper: #F7F9F8;
+    --line: #D7E0DE;
+    --teal: #1E7A6F;
+    --teal-soft: #E3F0ED;
+    --pulse: #D8352A;
+    --pulse-soft: #FBE9E7;
+    --mut: #5C7370;
+    --mono: 'JetBrains Mono', monospace;
   }
   * { box-sizing: border-box; margin: 0; }
-  body { font-family:'Inter',sans-serif; color:var(--ink); background:var(--paper); min-height:100vh; }
-  h1,h2,h3 { font-family:'Space Grotesk',sans-serif; }
-  .hdr { background:var(--ink); color:var(--paper); padding:16px 22px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-  .hdr .brand { display:flex; align-items:center; gap:10px; }
-  .hdr .dot { width:10px; height:10px; border-radius:50%; background:var(--pulse); box-shadow:0 0 0 4px rgba(216,53,42,.25); }
-  .hdr h1 { font-size:17px; font-weight:700; }
-  .hdr .sub { font-size:11.5px; opacity:.65; font-family:var(--mono); }
-  .hdr .who { font-size:12.5px; opacity:.85; display:flex; align-items:center; gap:10px; }
-  .hdr button { background:transparent; border:1px solid rgba(247,249,248,.35); color:var(--paper); border-radius:8px; padding:5px 11px; font-size:12px; cursor:pointer; font-family:'Inter',sans-serif; }
-  .hdr button:hover { background:rgba(247,249,248,.12); }
-  .wrap { padding:26px 22px; max-width:860px; margin:0 auto; }
-  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:22px; }
-  .field { margin-bottom:14px; }
-  .field label { display:block; font-size:12.5px; font-weight:600; margin-bottom:5px; color:var(--ink-2); }
-  .field input, .field select { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; font-family:'Inter',sans-serif; background:var(--paper); color:var(--ink); }
-  .field input:focus, .field select:focus { outline:2px solid var(--teal); outline-offset:1px; border-color:var(--teal); }
-  .btn { display:inline-block; border:none; border-radius:9px; padding:11px 18px; font-size:14px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif; background:var(--teal); color:#fff; transition:background .15s; }
-  .btn:hover { background:#166055; }
-  .btn.ghost { background:transparent; color:var(--teal); border:1px solid var(--teal); }
-  .btn.ghost:hover { background:var(--teal-soft); }
-  .btn.small { padding:6px 12px; font-size:12.5px; }
-  .muted { color:var(--mut); font-size:13px; }
-  .err { color:var(--pulse); font-size:12.5px; margin-top:8px; }
-  .ok { color:var(--teal); font-size:12.5px; margin-top:8px; }
-  .folder-item, .vid-item {
-    display:flex; align-items:center; justify-content:space-between; gap:12px;
-    background:#fff; border:1px solid var(--line); border-radius:11px; padding:16px 18px; margin-bottom:10px;
-    cursor:pointer; transition:border-color .15s;
+  body {
+    font-family: 'Inter', sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    min-height: 100vh;
   }
-  .folder-item:hover, .vid-item:hover { border-color:var(--teal); }
-  .folder-item .t, .vid-item .t { font-weight:600; font-size:14.5px; }
-  .folder-item .m, .vid-item .m { font-size:12px; color:var(--mut); font-family:var(--mono); margin-top:2px; }
-  .badge { font-family:var(--mono); font-size:11px; padding:3px 8px; border-radius:20px; background:var(--teal-soft); color:var(--teal); font-weight:600; }
-  .badge.done { background:var(--pulse-soft); color:var(--pulse); }
-  video { width:100%; border-radius:11px; background:#000; display:block; }
-  .readout { display:flex; align-items:center; justify-content:space-between; gap:14px; background:var(--ink); border-radius:12px; padding:16px 20px; margin-top:14px; flex-wrap:wrap; }
-  .clock { font-family:var(--mono); font-size:34px; font-weight:700; color:var(--paper); letter-spacing:1px; font-variant-numeric:tabular-nums; }
-  .clock .lbl { display:block; font-size:10.5px; font-weight:400; letter-spacing:1.5px; color:rgba(247,249,248,.55); text-transform:uppercase; }
-  .mark-btn { background:var(--pulse); color:#fff; border:none; border-radius:10px; padding:14px 24px; font-size:15px; font-weight:700; font-family:'Space Grotesk',sans-serif; cursor:pointer; }
-  .mark-btn:hover { background:#b52a21; }
-  .marked { margin-top:14px; background:var(--pulse-soft); border:1px solid #F0C4C0; border-radius:11px; padding:14px 18px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-  .marked .mt { font-family:var(--mono); font-size:22px; font-weight:700; color:var(--pulse); }
-  .crumb { font-size:12.5px; color:var(--mut); margin-bottom:10px; }
-  .crumb a { color:var(--teal); text-decoration:none; cursor:pointer; }
-  @media (max-width:520px) { .wrap { padding:18px 14px; } .clock { font-size:26px; } }
+  h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; }
+  .hdr {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 16px 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .hdr .brand { display: flex; align-items: center; gap: 10px; }
+  .hdr .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--pulse);
+    box-shadow: 0 0 0 4px rgba(216, 53, 42, .25);
+  }
+  .hdr h1 { font-size: 17px; font-weight: 700; }
+  .hdr .sub { font-size: 11.5px; opacity: .65; font-family: var(--mono); }
+  .hdr .who { font-size: 12.5px; opacity: .85; display: flex; align-items: center; gap: 10px; }
+  .hdr button {
+    background: transparent;
+    border: 1px solid rgba(247, 249, 248, .35);
+    color: var(--paper);
+    border-radius: 8px;
+    padding: 5px 11px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+  }
+  .hdr button:hover { background: rgba(247, 249, 248, .12); }
+  .wrap { padding: 26px 22px; max-width: 860px; margin: 0 auto; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; color: var(--ink-2); }
+  .field input, .field select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .field input:focus, .field select:focus {
+    outline: 2px solid var(--teal);
+    outline-offset: 1px;
+    border-color: var(--teal);
+  }
+  .btn {
+    display: inline-block;
+    border: none;
+    border-radius: 9px;
+    padding: 11px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    background: var(--teal);
+    color: #fff;
+    transition: background .15s;
+  }
+  .btn:hover { background: #166055; }
+  .btn.ghost { background: transparent; color: var(--teal); border: 1px solid var(--teal); }
+  .btn.ghost:hover { background: var(--teal-soft); }
+  .btn.small { padding: 6px 12px; font-size: 12.5px; }
+  .muted { color: var(--mut); font-size: 13px; }
+  .err { color: var(--pulse); font-size: 12.5px; margin-top: 8px; }
+  .ok { color: var(--teal); font-size: 12.5px; margin-top: 8px; }
+  .folder-item, .vid-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  .folder-item:hover, .vid-item:hover { border-color: var(--teal); }
+  .folder-item .t, .vid-item .t { font-weight: 600; font-size: 14.5px; }
+  .folder-item .m, .vid-item .m { font-size: 12px; color: var(--mut); font-family: var(--mono); margin-top: 2px; }
+  .badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    background: var(--teal-soft);
+    color: var(--teal);
+    font-weight: 600;
+  }
+  video { width: 100%; border-radius: 11px; background: #000; display: block; }
+  .readout {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    background: var(--ink);
+    border-radius: 12px;
+    padding: 16px 20px;
+    flex-wrap: wrap;
+  }
+  .clock { font-family: var(--mono); font-size: 34px; font-weight: 700; color: var(--paper); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+  .clock .lbl { display: block; font-size: 10.5px; font-weight: 400; letter-spacing: 1.5px; color: rgba(247, 249, 248, .55); text-transform: uppercase; }
+  .mark-btn {
+    background: var(--pulse);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 14px 24px;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: 'Space Grotesk', sans-serif;
+    cursor: pointer;
+  }
+  .mark-btn:hover { background: #b52a21; }
+  .marked {
+    background: var(--pulse-soft);
+    border: 1px solid #F0C4C0;
+    border-radius: 11px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .marked .mt { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--pulse); }
+  .crumb { font-size: 12.5px; color: var(--mut); margin-bottom: 10px; }
+  .crumb a { color: var(--teal); text-decoration: none; cursor: pointer; }
+
+  body[data-view="player"] { overflow: hidden; }
+  body[data-view="player"] .wrap {
+    height: calc(100vh - 70px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 18px;
+    max-width: 100%;
+  }
+  .player-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .player-shell h2 { margin-bottom: 12px; }
+  .player-layout {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+    gap: 18px;
+    align-items: stretch;
+  }
+  .video-panel,
+  .control-panel {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .video-panel video {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    max-height: calc(100vh - 240px);
+    object-fit: contain;
+  }
+  .control-panel .readout {
+    margin-top: 0;
+    min-height: 160px;
+    align-items: stretch;
+  }
+  .control-panel .clock {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .control-panel .mark-btn {
+    width: 100%;
+    min-height: 64px;
+  }
+  .control-panel .marked,
+  .control-panel .ok,
+  .control-panel .err {
+    margin-top: 14px;
+  }
+
+  @media (max-width:520px) {
+    .wrap { padding: 18px 14px; }
+    .clock { font-size: 26px; }
+    body[data-view="player"] .wrap { height: calc(100vh - 64px); }
+    .player-layout { grid-template-columns: 1fr; }
+    .video-panel video { max-height: 42vh; }
+  }
 </style>
 </head>
 <body>
 <div class="hdr">
-  <div class="brand"><div class="dot"></div>
-    <div><h1>CRT Perception Study</h1><div class="sub">capillary refill · color-change timing</div></div>
+  <div class="brand">
+    <div class="dot"></div>
+    <div>
+      <h1>CRT Perception Study</h1>
+      <div class="sub">capillary refill · color-change timing</div>
+    </div>
   </div>
   <div class="who" id="whoBox"></div>
 </div>
 <div class="wrap" id="app"></div>
 
-<!--
-  =====================================================================
-  CONFIG: Edit COLLECTIONS below to add your folders and videos.
-  Each collection = one folder. Add video URLs as raw.githubusercontent.com links.
-  =====================================================================
--->
 <script>
 const COLLECTIONS = [
   {
@@ -84,25 +251,66 @@ const COLLECTIONS = [
       { id: 'v1', title: 'CRT Test 01', url: 'https://raw.githubusercontent.com/PansiluHarshan/CRT-Study-Video/main/CRTtest01.mp4' }
     ]
   }
-  // Add more collections here, e.g.:
-  // { id:'col2', name:'Collection 02', videos:[ {id:'v2', title:'CRT Test 02', url:'https://raw.githubusercontent.com/.../file.mp4'} ] }
 ];
 
-// PASTE your Google Apps Script Web App URL here after setup (see instructions).
 const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxhR0mT_Fh9_Ixi6sLWGnKFHDF7T4gFOql6YE-7Zk8261idkvMlbj_ra3vFB5yDR--dRA/exec';
+const STORAGE_KEY = 'crt-study-annotations';
 </script>
 
 <script>
 (() => {
   const app = document.getElementById('app');
   const whoBox = document.getElementById('whoBox');
-  let state = { view:'login', user:null, col:null, vid:null, marked:null, msg:'', err:'' };
+  let state = { view: 'login', user: null, col: null, vid: null, vidIndex: 0, marked: null, msg: '', err: '' };
+  let annotations = loadAnnotations();
 
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const fmt = t => { if (t==null) return '--:--.--'; const m=Math.floor(t/60), s=t%60; return String(m).padStart(2,'0')+':'+s.toFixed(2).padStart(5,'0'); };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = t => {
+    if (t == null) return '--:--.--';
+    const m = Math.floor(t / 60), s = t % 60;
+    return String(m).padStart(2, '0') + ':' + s.toFixed(2).padStart(5, '0');
+  };
+  const csvCell = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
+
+  function loadAnnotations() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch {
+      return [];
+    }
+  }
+
+  function saveAnnotations() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(annotations));
+  }
+
+  function exportCsv() {
+    const header = ['name', 'status', 'age', 'collection', 'videoIndex', 'videoTitle', 'timeSeconds', 'submittedAt'];
+    const rows = [header.join(',')];
+    for (const row of annotations) {
+      rows.push([
+        csvCell(row.name),
+        csvCell(row.status),
+        csvCell(row.age),
+        csvCell(row.collection),
+        csvCell(row.videoIndex),
+        csvCell(row.videoTitle),
+        csvCell(row.timeSeconds),
+        csvCell(row.submittedAt),
+      ].join(','));
+    }
+    const blob = new Blob([rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'crt-study-annotations.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   function render() {
-    whoBox.innerHTML = state.user ? `<span>${esc(state.user.name)} · ${esc(state.user.status)}</span><button onclick="window.__act('logout')">Log out</button>` : '';
+    document.body.dataset.view = state.view;
+    whoBox.innerHTML = state.user ? `<span>${esc(state.user.name)} · ${esc(state.user.status)}</span>${annotations.length ? `<button onclick="window.__act('export')">Export log</button>` : ''}<button onclick="window.__act('logout')">Log out</button>` : '';
     let html = '';
     if (state.view === 'login') html = viewLogin();
     else if (state.view === 'collections') html = viewCollections();
@@ -118,9 +326,9 @@ const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxhR0mT_Fh9_Ixi6
       <p class="muted" style="margin-bottom:18px;">You'll watch short videos of a capillary refill test and mark the moment you see the skin color return.</p>
       <div class="field"><label>Full name</label><input id="f-name" placeholder="e.g. A. Perera"></div>
       <div class="field"><label>Status / role</label>
-        <select id="f-status"><option value="">Select…</option><option>Student</option><option>Nurse</option><option>Doctor</option><option>Medical student</option><option>Researcher</option><option>Other</option></select></div>
+        <select id="f-status"><option value="">Select...</option><option>Student</option><option>Nurse</option><option>Doctor</option><option>Medical student</option><option>Researcher</option><option>Other</option></select></div>
       <div class="field"><label>Age group</label>
-        <select id="f-age"><option value="">Select…</option><option>18–24</option><option>25–34</option><option>35–44</option><option>45–54</option><option>55+</option></select></div>
+        <select id="f-age"><option value="">Select...</option><option>18-24</option><option>25-34</option><option>35-44</option><option>45-54</option><option>55+</option></select></div>
       <button class="btn" style="width:100%;" onclick="window.__act('login')">Start</button>
       ${state.err ? `<div class="err">${esc(state.err)}</div>` : ''}
     </div>`;
@@ -129,7 +337,7 @@ const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxhR0mT_Fh9_Ixi6
   function viewCollections() {
     const items = COLLECTIONS.map(c => `
       <div class="folder-item" onclick="window.__act('opencol','${c.id}')">
-        <div><div class="t">📁 ${esc(c.name)}</div><div class="m">${c.videos.length} video${c.videos.length!==1?'s':''}</div></div>
+        <div><div class="t">?? ${esc(c.name)}</div><div class="m">${c.videos.length} video${c.videos.length !== 1 ? 's' : ''}</div></div>
         <span class="badge">Open</span>
       </div>`).join('');
     return `<h2 style="margin-bottom:4px;">Collections</h2>
@@ -139,9 +347,9 @@ const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxhR0mT_Fh9_Ixi6
 
   function viewVideos() {
     const col = COLLECTIONS.find(c => c.id === state.col);
-    const items = col.videos.map((v,i) => `
+    const items = col.videos.map((v, i) => `
       <div class="vid-item" onclick="window.__act('openvid','${v.id}')">
-        <div><div class="t">${esc(v.title)}</div><div class="m">VIDEO ${String(i+1).padStart(2,'0')}</div></div>
+        <div><div class="t">${esc(v.title)}</div><div class="m">VIDEO ${String(i + 1).padStart(2, '0')}</div></div>
         <span class="badge">Watch</span>
       </div>`).join('');
     return `<div class="crumb"><a onclick="window.__act('backcols')">Collections</a> / ${esc(col.name)}</div>
@@ -151,82 +359,119 @@ const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxhR0mT_Fh9_Ixi6
 
   function viewPlayer() {
     const col = COLLECTIONS.find(c => c.id === state.col);
-    const v = col.videos.find(x => x.id === state.vid);
-    return `<div class="crumb"><a onclick="window.__act('backcols')">Collections</a> / <a onclick="window.__act('opencol','${col.id}')">${esc(col.name)}</a> / ${esc(v.title)}</div>
+    const v = col.videos[state.vidIndex] || col.videos.find(x => x.id === state.vid);
+    const total = col.videos.length;
+    const current = Math.max(1, state.vidIndex + 1);
+    const nextExists = state.vidIndex < total - 1;
+    return `<div class="player-shell">
+      <div class="crumb"><a onclick="window.__act('backcols')">Collections</a> / <a onclick="window.__act('opencol','${col.id}')">${esc(col.name)}</a> / ${esc(v.title)}</div>
       <h2 style="margin-bottom:12px;">${esc(v.title)}</h2>
-      <video id="vid" src="${esc(v.url)}" controls playsinline preload="metadata"></video>
-      <div class="readout">
-        <div class="clock"><span class="lbl">Video time</span><span id="clock">00:00.00</span></div>
-        <button class="mark-btn" onclick="window.__act('mark')">● Mark color change</button>
-      </div>
-      ${state.marked != null ? `
-        <div class="marked">
-          <div>You marked the color change at <span class="mt">${fmt(state.marked)}</span> <span class="muted">(${state.marked.toFixed(2)} s)</span></div>
-          <div style="display:flex;gap:8px;">
-            <button class="btn ghost small" onclick="window.__act('remark')">Re-mark</button>
-            <button class="btn small" onclick="window.__act('submit')">Submit answer</button>
+      <div class="muted" style="margin-bottom:14px;">Video ${current} of ${total}</div>
+      <div class="player-layout">
+        <div class="video-panel">
+          <video id="vid" src="${esc(v.url)}" controls playsinline preload="metadata"></video>
+        </div>
+        <div class="control-panel">
+          <div class="readout">
+            <div class="clock"><span class="lbl">Video time</span><span id="clock">00:00.00</span></div>
+            <button class="mark-btn" onclick="window.__act('mark')">Mark color change</button>
           </div>
-        </div>` : `<p class="muted" style="margin-top:12px;">Play the video, then press the red button the instant you see the color change.</p>`}
-      ${state.msg ? `<div class="ok">${esc(state.msg)}</div>` : ''}
-      ${state.err ? `<div class="err">${esc(state.err)}</div>` : ''}`;
+          ${state.marked != null ? `
+            <div class="marked">
+              <div>You marked the color change at <span class="mt">${fmt(state.marked)}</span> <span class="muted">(${state.marked.toFixed(2)} s)</span></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn ghost small" onclick="window.__act('remark')">Re-mark</button>
+                <button class="btn small" onclick="window.__act('submit')">${nextExists ? 'Save & Next' : 'Save & Finish'}</button>
+              </div>
+            </div>` : `<p class="muted" style="margin-top:12px;">Play the video, then press the red button the instant you see the color change.</p>`}
+          ${state.msg ? `<div class="ok">${esc(state.msg)}</div>` : ''}
+          ${state.err ? `<div class="err">${esc(state.err)}</div>` : ''}
+        </div>
+      </div>
+    </div>`;
   }
 
   let clockTimer = null;
   function startClock() {
     stopClock();
     clockTimer = setInterval(() => {
-      const vid = document.getElementById('vid'); const c = document.getElementById('clock');
+      const vid = document.getElementById('vid');
+      const c = document.getElementById('clock');
       if (vid && c) c.textContent = fmt(vid.currentTime);
     }, 50);
   }
-  function stopClock() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
-
-  async function submitToSheet(payload) {
-    if (!SHEET_ENDPOINT || SHEET_ENDPOINT.includes('PASTE_YOUR')) {
-      throw new Error('no-endpoint');
+  function stopClock() {
+    if (clockTimer) {
+      clearInterval(clockTimer);
+      clockTimer = null;
     }
-    await fetch(SHEET_ENDPOINT, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload)
-    });
   }
 
   window.__act = async function(act, id) {
-    state.msg=''; state.err='';
-    if (act==='login') {
-      const name=document.getElementById('f-name').value.trim();
-      const status=document.getElementById('f-status').value;
-      const age=document.getElementById('f-age').value;
-      if (!name||!status) { state.err='Name and status are required.'; return render(); }
+    state.msg = '';
+    state.err = '';
+    if (act === 'login') {
+      const name = document.getElementById('f-name').value.trim();
+      const status = document.getElementById('f-status').value;
+      const age = document.getElementById('f-age').value;
+      if (!name || !status) {
+        state.err = 'Name and status are required.';
+        return render();
+      }
       state.user = { name, status, age };
-      state.view='collections'; return render();
+      state.view = 'collections';
+      return render();
     }
-    if (act==='logout') { state.user=null; state.view='login'; return render(); }
-    if (act==='opencol') { state.col=id; state.view='videos'; return render(); }
-    if (act==='backcols') { state.view='collections'; state.col=null; return render(); }
-    if (act==='openvid') { state.vid=id; state.marked=null; state.view='player'; return render(); }
-    if (act==='mark') {
-      const vidEl=document.getElementById('vid');
-      if (!vidEl||!vidEl.currentTime) { state.err='Play the video first, then mark.'; return render(); }
-      state.marked=vidEl.currentTime; return render();
+    if (act === 'logout') { state.user = null; state.view = 'login'; return render(); }
+    if (act === 'opencol') { state.col = id; state.view = 'videos'; return render(); }
+    if (act === 'backcols') { state.view = 'collections'; state.col = null; return render(); }
+    if (act === 'openvid') {
+      const col = COLLECTIONS.find(c => c.id === state.col);
+      state.vidIndex = col.videos.findIndex(x => x.id === id);
+      state.vid = id;
+      state.marked = null;
+      state.view = 'player';
+      return render();
     }
-    if (act==='remark') { state.marked=null; return render(); }
-    if (act==='submit') {
-      const col = COLLECTIONS.find(c => c.id===state.col);
-      const v = col.videos.find(x => x.id===state.vid);
+    if (act === 'mark') {
+      const vidEl = document.getElementById('vid');
+      if (!vidEl || !vidEl.currentTime) {
+        state.err = 'Play the video first, then mark.';
+        return render();
+      }
+      state.marked = vidEl.currentTime;
+      return render();
+    }
+    if (act === 'remark') { state.marked = null; return render(); }
+    if (act === 'submit') {
+      const col = COLLECTIONS.find(c => c.id === state.col);
+      const v = col.videos[state.vidIndex] || col.videos.find(x => x.id === state.vid);
       const payload = {
-        name: state.user.name, status: state.user.status, age: state.user.age,
-        collection: col.name, videoTitle: v.title,
+        name: state.user.name,
+        status: state.user.status,
+        age: state.user.age,
+        collection: col.name,
+        videoIndex: state.vidIndex + 1,
+        videoTitle: v.title,
         timeSeconds: Number(state.marked.toFixed(3)),
         submittedAt: new Date().toISOString()
       };
-      try {
-        await submitToSheet(payload);
-        state.msg='Saved. Thank you!';
-      } catch(e) {
-        state.err='Could not reach the data sheet. Ask the researcher to check the setup. (Your time was: ' + payload.timeSeconds + 's)';
+      annotations.push(payload);
+      saveAnnotations();
+      const nextIndex = state.vidIndex + 1;
+      if (nextIndex < col.videos.length) {
+        state.vidIndex = nextIndex;
+        state.vid = col.videos[nextIndex].id;
+        state.marked = null;
+        state.msg = 'Saved locally. Moving to the next video.';
+        state.view = 'player';
+      } else {
+        state.msg = 'Saved locally. All videos completed.';
+        state.view = 'collections';
+        state.col = null;
+        state.vid = null;
+        state.vidIndex = 0;
+        state.marked = null;
       }
       return render();
     }
@@ -237,3 +482,4 @@ const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxhR0mT_Fh9_Ixi6
 </script>
 </body>
 </html>
+
