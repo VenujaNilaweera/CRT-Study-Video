@@ -34,6 +34,9 @@ work/
 # Collected data — generated at runtime, not source
 data.xlsx
 
+# Personal analysis scripts
+analysis.py
+
 # Video files and metadata (never commit videos or their generated stamp files)
 videos/
 *.mp4
