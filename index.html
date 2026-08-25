@@ -37,23 +37,15 @@
 /* =========================================================================
    VIDEO LIBRARY
 
-   The app AUTO-DISCOVERS every video sitting in the folders listed in
-   VIDEO_FOLDERS below. Just drop .mp4 clips into "videos/" (next to this
-   file) and reload — they appear automatically, no code editing needed.
-
-   Serve the folder over http (e.g.  python -m http.server 8899 ) so the
-   browser can both list the folder and load the clips.
-
-   Want several separate folders/collections? Add more entries to
-   VIDEO_FOLDERS, each with its own on-disk path and display name.
+   Videos, collections, and their stamp metadata now come from Supabase
+   (see the SUPABASE BACKEND block below). To add clips: upload the .mp4 to
+   the Storage bucket and insert a matching row in the `videos` table — the
+   app picks them up on the next reload. Nothing to edit here.
 
    fps defaults to 30 (used to turn the marked time into a frame number).
-   If some clips run at another frame rate, add an override in FPS_OVERRIDES.
+   If some clips run at another frame rate, add an override in FPS_OVERRIDES
+   keyed by the video's storage_path.
    ========================================================================= */
-const VIDEO_FOLDERS = [
-  { id: 'col1', name: 'Collection 01', icon: '📁', path: 'videos/' }
-  // { id: 'col2', name: 'Collection 02', icon: '📁', path: 'videos2/' },
-];
 
 const DEFAULT_FPS = 30;
 const FPS_OVERRIDES = {
@@ -65,16 +57,33 @@ const FPS_OVERRIDES = {
 // { id, title, url, fps }
 const MANUAL_COLLECTIONS = [];
 
-// Populated at runtime from VIDEO_FOLDERS (falls back to MANUAL_COLLECTIONS).
+// Populated at runtime from Supabase (falls back to MANUAL_COLLECTIONS).
 let COLLECTIONS = MANUAL_COLLECTIONS.map(c => ({ ...c }));
 
 const STORAGE_KEY = 'crt-study-annotations';
 const SESSION_KEY = 'crt-study-session';
 const THEME_KEY = 'crt-theme';
-// Save to the SAME host the page was opened from, on the helper's port (8787).
-// This way a phone that opens http://<pc-ip>:8899 saves to the PC's helper,
-// not to the phone's own localhost. Falls back to 127.0.0.1 for file:// opens.
-const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annotation`;
+
+/* =========================================================================
+   SUPABASE BACKEND
+
+   Videos + their stamp metadata are read from the `videos` table.
+   The .mp4 files themselves are served from the public Storage bucket.
+   Annotations are written directly into the `annotations` table.
+   No Python helper and no local videos/ folder are needed anymore.
+   ========================================================================= */
+const SUPABASE_URL = 'https://nsmdjwgurzoyfkxatgzz.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_WSs9V5v6MUMCFtXJyF3opg_KkQGypYr';
+const STORAGE_BUCKET = 'vids';
+// Public URL prefix for objects in the bucket.
+const BUCKET_PUBLIC_URL = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/`;
+// REST endpoints.
+const REST_URL = `${SUPABASE_URL}/rest/v1`;
+const SUPA_HEADERS = {
+  'apikey': SUPABASE_ANON_KEY,
+  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+  'Content-Type': 'application/json'
+};
 </script>
 
 <script>
@@ -175,17 +184,38 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     URL.revokeObjectURL(url);
   }
 
+  // Write one annotation row into the Supabase `annotations` table.
+  // Keeps the same function name so the rest of the app (queue, retry,
+  // offline resilience) is untouched.
   async function saveToExcel(payload) {
-    const response = await fetch(EXCEL_HELPER_URL, {
+    // Map the app's payload onto the annotations table columns.
+    const row = {
+      display_name: payload.name,
+      role: payload.status,
+      age_group: payload.age,
+      video_id: payload.videoId || null,
+      skipped: false,
+      mark_file_time_s: payload.rawTimeSeconds === '' ? null : payload.rawTimeSeconds,
+      frame_number: payload.frameIndex === '' ? null : payload.frameIndex,
+      crt_s: payload.crtSeconds === '' ? null : payload.crtSeconds,
+      fps_used: payload.fps === '' ? null : payload.fps,
+      release_file_time_s: payload.stampTimeSeconds === '' ? null : payload.stampTimeSeconds,
+      stamp_frame_used: payload.stampFrame === '' ? null : payload.stampFrame,
+      submitted_at: payload.submittedAt
+    };
+    // return=minimal → Supabase won't try to SELECT the row back after
+    // insert, so we don't need a public read policy on `annotations`
+    // (participants can submit but never read others' marks).
+    const response = await fetch(`${REST_URL}/annotations`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      headers: { ...SUPA_HEADERS, 'Prefer': 'return=minimal' },
+      body: JSON.stringify(row)
     });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok || !result.ok) {
-      throw new Error(result.error || 'Excel helper did not save the annotation.');
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || `Supabase rejected the annotation (${response.status}).`);
     }
-    return result;
+    return { ok: true };
   }
 
   /* ---------- render ---------- */
@@ -710,6 +740,7 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
         collection: col.name,
         videoIndex: state.vidIndex + 1,
         videoTitle: v.title,
+        videoId: v.videoId || null,   // FK into the Supabase `videos` table
         // timeSeconds is the study value: real CRT since release when stamped,
         // otherwise the raw mark time.
         timeSeconds: crt != null ? Number(Math.max(0, crt).toFixed(3)) : rawTime,
@@ -759,67 +790,52 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     });
   }
 
-  /* ---------- auto-discover videos in the configured folders ---------- */
-  const VIDEO_EXT = /\.(mp4|webm|ogg|ogv|mov|m4v)$/i;
-  async function discoverFolder(folder) {
-    try {
-      const res = await fetch(folder.path, { cache: 'no-store' });
-      if (!res.ok) return null;
-      const html = await res.text();
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      const names = [...doc.querySelectorAll('a')]
-        .map(a => a.getAttribute('href') || '')
-        .filter(h => VIDEO_EXT.test(h))
-        .map(h => decodeURIComponent(h.split('/').pop().split('?')[0]));
-      const uniq = [...new Set(names)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-      if (!uniq.length) return null;
-      const base = folder.path.endsWith('/') ? folder.path : folder.path + '/';
-      return Promise.all(uniq.map(async (name, i) => {
-        const stamp = await fetchStamp(base, name);
-        return {
-          id: folder.id + '-' + i,
-          title: 'CRT Test ' + String(i + 1).padStart(2, '0'),
-          file: name,
-          url: base + encodeURIComponent(name),
-          // fileFps = the ENCODED frame rate of the .mp4 (used for stepping and
-          // for turning video-time into a frame number). Refined from
-          // frame_count/duration once metadata loads; else detected, else 30.
-          fps: Number(FPS_OVERRIDES[name]) || DEFAULT_FPS,
-          // realFps = the true CAPTURE rate. The file is CFR-encoded at a
-          // different rate, so the stamp's timeline is bridged by FRAME NUMBER:
-          //   real CRT = (markedFrame − stampFrame) / realFps.
-          realFps: stamp && stamp.frame_count && stamp.recording_duration_s
-            ? stamp.frame_count / stamp.recording_duration_s
-            : (stamp && Number(stamp.fps)) || null,
-          stampFrame: stamp && stamp.stamped_frame != null ? stamp.stamped_frame : null,
-          stamped: !!(stamp && stamp.stamped),
-          frameCount: stamp && stamp.frame_count != null ? stamp.frame_count : null,
-          recDuration: stamp && stamp.recording_duration_s != null ? stamp.recording_duration_s : null,
-          stampTimeS: stamp && stamp.stamp_time_s != null ? stamp.stamp_time_s : null
-        };
-      }));
-    } catch { return null; }
-  }
-
-  /* Each clip may ship a "<name>.stamp.json" describing the release ("stamp")
-     moment. CRT is measured from stamp_time_s, not from the video's start. */
-  async function fetchStamp(base, name) {
-    const jsonName = name.replace(/\.[^.]+$/, '') + '.stamp.json';
-    try {
-      const res = await fetch(base + encodeURIComponent(jsonName), { cache: 'no-store' });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch { return null; }
-  }
-
+  /* ---------- load videos + collections from Supabase ---------- */
+  /* The `videos` table already holds every stamp field that used to live in a
+     per-clip .stamp.json, so there's no folder to scrape and no JSON to fetch.
+     Each .mp4 is served from the public Storage bucket by its storage_path. */
   async function discoverAll() {
+    let cols = [], vids = [];
+    try {
+      const [colRes, vidRes] = await Promise.all([
+        fetch(`${REST_URL}/collections?select=*&order=sort_order`, { headers: SUPA_HEADERS, cache: 'no-store' }),
+        fetch(`${REST_URL}/videos?select=*&order=collection_id,video_number`, { headers: SUPA_HEADERS, cache: 'no-store' })
+      ]);
+      if (colRes.ok) cols = await colRes.json();
+      if (vidRes.ok) vids = await vidRes.json();
+    } catch { /* network down — fall through to fallback below */ }
+
     const built = [];
-    for (const folder of VIDEO_FOLDERS) {
-      const videos = await discoverFolder(folder);
-      if (videos && videos.length) {
-        built.push({ id: folder.id, name: folder.name, icon: folder.icon || '📁', videos });
-      }
+    for (const c of cols) {
+      const clips = vids
+        .filter(v => v.collection_id === c.id)
+        .sort((a, b) => a.video_number - b.video_number)
+        .map(v => {
+          const realFps = (v.frame_count && v.recording_duration_s)
+            ? v.frame_count / v.recording_duration_s
+            : (Number(v.capture_fps) || null);
+          return {
+            id: c.id + '-' + v.video_number,
+            videoId: v.id,                 // UUID FK for annotations
+            title: v.title || ('CRT Test ' + String(v.video_number).padStart(2, '0')),
+            file: v.storage_path,
+            url: BUCKET_PUBLIC_URL + v.storage_path.split('/').map(encodeURIComponent).join('/'),
+            // fileFps: encoded rate of the .mp4 (used for frame stepping and for
+            // turning video-time into a frame number). Refined once metadata loads.
+            fps: Number(FPS_OVERRIDES[v.storage_path]) || Number(v.encoded_fps) || DEFAULT_FPS,
+            // realFps: true CAPTURE rate; CRT is bridged by frame number:
+            //   real CRT = (markedFrame − stampFrame) / realFps.
+            realFps: realFps,
+            stampFrame: v.stamped_frame != null ? v.stamped_frame : null,
+            stamped: !!v.stamped,
+            frameCount: v.frame_count != null ? v.frame_count : null,
+            recDuration: v.recording_duration_s != null ? v.recording_duration_s : null,
+            stampTimeS: v.stamp_time_s != null ? v.stamp_time_s : null
+          };
+        });
+      if (clips.length) built.push({ id: c.id, name: c.name, icon: c.icon || '📁', videos: clips });
     }
+
     if (built.length) {
       COLLECTIONS = built;
     } else if (!COLLECTIONS.length) {
