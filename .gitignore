@@ -34,11 +34,17 @@ work/
 # Collected data — generated at runtime, not source
 data.xlsx
 
-# Pre-conversion video originals kept only as a local safety copy
-videos/_original_backup/
+# Video files and metadata (never commit videos or their generated stamp files)
+videos/
+*.mp4
+*.webm
+*.mov
+*.m4v
+*.stamp.json
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*.bak
