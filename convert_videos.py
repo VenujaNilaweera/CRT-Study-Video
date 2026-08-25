@@ -69,6 +69,10 @@ def convert(src_original: Path, dest: Path) -> bool:
         "ffmpeg", "-y", "-loglevel", "error", "-i", str(src_original),
         "-c:v", "libx264", "-profile:v", "baseline", "-level", "3.1",
         "-crf", "20", "-preset", "fast", "-pix_fmt", "yuv420p",
+        # All-intra: a keyframe on EVERY frame so the browser can seek to any
+        # single frame exactly (frame stepping + auto-seek to the release frame).
+        # Clips are short, so the larger file size is a fine trade for precision.
+        "-g", "1", "-keyint_min", "1", "-sc_threshold", "0",
         "-vsync", "cfr", "-movflags", "+faststart",
         "-an",  # study clips have no audio; drop it. Remove this line to keep audio.
         str(dest),

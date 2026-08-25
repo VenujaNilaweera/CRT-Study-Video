@@ -81,7 +81,7 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
 (() => {
   const app = document.getElementById('app');
   const hdrActions = document.getElementById('hdrActions');
-  let state = { view: 'login', user: null, col: null, vidIndex: 0, marked: null, saving: false, msg: '', err: '' };
+  let state = { view: 'login', user: null, col: null, vidIndex: 0, marked: null, saving: false, msg: '', err: '', speed: 1 };
   restoreSession();               // survive page reloads (e.g. live-reload servers, accidental refresh)
   let annotations = loadAnnotations();
 
@@ -157,13 +157,15 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
 
   /* ---------- CSV export ---------- */
   function exportCsv() {
-    const header = ['name', 'status', 'age', 'collection', 'videoIndex', 'videoTitle', 'timeSeconds', 'fps', 'frameIndex', 'submittedAt'];
+    const header = ['name', 'status', 'age', 'collection', 'videoIndex', 'videoTitle',
+      'timeSeconds', 'crtSeconds', 'rawTimeSeconds', 'stampTimeSeconds', 'fps', 'frameIndex', 'stampFrame', 'submittedAt'];
     const rows = [header.join(',')];
     for (const row of annotations) {
       rows.push([
         csvCell(row.name), csvCell(row.status), csvCell(row.age), csvCell(row.collection),
         csvCell(row.videoIndex), csvCell(row.videoTitle), csvCell(row.timeSeconds),
-        csvCell(row.fps), csvCell(row.frameIndex), csvCell(row.submittedAt),
+        csvCell(row.crtSeconds), csvCell(row.rawTimeSeconds), csvCell(row.stampTimeSeconds),
+        csvCell(row.fps), csvCell(row.frameIndex), csvCell(row.stampFrame), csvCell(row.submittedAt),
       ].join(','));
     }
     const blob = new Blob([rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
@@ -194,6 +196,8 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     let actions = `<button class="icon-btn square" title="Toggle theme" onclick="window.__act('theme')">${themeIcon}</button>`;
     if (state.user) {
       actions += `<span class="who">${esc(state.user.name)} · ${esc(state.user.status)}</span>`;
+      const pending = annotations.filter(a => a.synced === false).length;
+      if (pending) actions += `<button class="sync-warn" title="${pending} mark(s) not yet written to data.xlsx — click to retry" onclick="window.__act('retrysync')">⟳ ${pending} unsaved</button>`;
       if (annotations.length) actions += `<button onclick="window.__act('export')">Export log</button>`;
       actions += `<button onclick="window.__act('logout')">Log out</button>`;
     }
@@ -289,42 +293,49 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
       <div class="player-layout">
         <div class="video-panel">
           <div class="vid-stage">
-            <video id="vid" src="${esc(v.url)}" playsinline preload="auto"></video>
+            <video id="vid" src="${esc(v.url)}" playsinline preload="auto"
+                   disablepictureinpicture controlslist="nodownload noremoteplayback"
+                   oncontextmenu="return false" draggable="false"></video>
             <div class="vid-loading" id="vidLoading"><span class="spin"></span> Buffering clip…</div>
           </div>
           <div class="scrub-row">
             <input type="range" id="scrub" class="scrub" min="0" max="1000" value="0" step="1"
                    oninput="window.__scrub(this.value)" title="Scrub through the clip">
+            <div class="stamp-tick" id="stampTick" hidden title="Pressure released (CRT = 0)"></div>
+          </div>
+        </div>
+        <div class="control-panel">
+          <div class="readout">
+            <div class="clock">
+              <span class="lbl">${v.stampFrame != null ? 'Time from pressure release' : 'Video time'}</span>
+              <span class="val" id="clock">00:00.00</span>
+              <span class="frame" id="frame">${v.stampFrame != null ? `release frame ${v.stampFrame}` : `frame 0 · ${fps} fps`}</span>
+            </div>
+            <button class="mark-btn" id="markBtn" onclick="window.__act('mark')">● Mark colour change <kbd>M</kbd></button>
           </div>
           <div class="transport">
             <button class="tbtn" title="Previous frame (← or ,)" onclick="window.__act('stepback')">◀ frame</button>
             <button class="tbtn play" id="playpause" title="Play / Pause (Space)" onclick="window.__act('playpause')">▶</button>
             <button class="tbtn" title="Next frame (→ or .)" onclick="window.__act('stepfwd')">frame ▶</button>
-            <button class="tbtn nextvid" id="nextVidBtn"
-                    title="Saves your mark, then moves on (N)"
-                    onclick="window.__act('submit')">${hasNext ? 'Save &amp; Next clip ›' : 'Save &amp; Finish ›'}</button>
           </div>
-          <div class="readout">
-            <div class="clock">
-              <span class="lbl">Video time</span>
-              <span class="val" id="clock">00:00.00</span>
-              <span class="frame" id="frame">frame 0 · ${fps} fps</span>
-            </div>
-            <button class="mark-btn" id="markBtn" onclick="window.__act('mark')">● Mark colour change <kbd>M</kbd></button>
+          <div class="speed-row">
+            <span class="speed-lbl">Speed</span>
+            ${[0.25, 0.5, 1].map(r => `<button class="speed-btn ${state.speed === r ? 'active' : ''}" onclick="window.__act('speed','${r}')">${r === 1 ? '1×' : r + '×'}</button>`).join('')}
           </div>
-        </div>
-        <div class="control-panel">
+          <button class="btn nextvid block" id="nextVidBtn"
+                  title="Saves your mark, then moves on (N)"
+                  onclick="window.__act('submit')">${hasNext ? 'Save &amp; Next clip ›' : 'Save &amp; Finish ›'}</button>
           <div id="markPanel">${markPanelHtml()}</div>
+          <div class="nav-row">
+            <button class="btn neutral" onclick="window.__act('prev')" ${hasPrev ? '' : 'disabled'}>‹ Prev</button>
+            <button class="btn neutral" onclick="window.__act('restart')">↺ Restart</button>
+          </div>
           <div class="shortcuts">
             <span><kbd>Space</kbd> play / pause</span>
             <span><kbd>←</kbd><kbd>→</kbd> step 1 frame</span>
             <span><kbd>⇧</kbd>+<kbd>←→</kbd> 10 frames</span>
             <span><kbd>M</kbd> mark</span>
             <span><kbd>N</kbd> save &amp; next</span>
-          </div>
-          <div class="nav-row">
-            <button class="btn neutral" onclick="window.__act('prev')" ${hasPrev ? '' : 'disabled'}>‹ Prev</button>
-            <button class="btn neutral" onclick="window.__act('restart')">↺ Restart</button>
           </div>
         </div>
       </div>`;
@@ -338,17 +349,22 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     if (!v) return '';
     const fps = Number(v.fps) || 30;
     const hasNext = state.vidIndex < col.videos.length - 1;
+    const crt = crtAt(v, state.marked);
+    const mf = state.marked != null ? frameInFile(v, state.marked) : null;
     const body = state.marked != null
       ? `<div class="marked">
-           <div class="headline">Colour change marked at</div>
-           <div><span class="mt">${fmt(state.marked)}</span></div>
-           <div class="meta">${state.marked.toFixed(3)} s · frame ${frameOf(state.marked, fps)}</div>
+           <div class="headline">${crt != null ? 'Capillary refill time' : 'Colour change marked at'}</div>
+           <div><span class="mt">${crt != null ? Math.max(0, crt).toFixed(2) + ' s' : fmt(state.marked)}</span></div>
+           <div class="meta">${crt != null
+              ? `frame ${mf} − release frame ${v.stampFrame} · ${v.realFps.toFixed(2)} fps`
+              : `${state.marked.toFixed(3)} s · frame ${frameOf(state.marked, fps)}`}</div>
            <div class="actions">
              <button class="btn ghost small" onclick="window.__act('remark')">↺ Re-mark</button>
            </div>
-           <div class="tip">Press the green <b>${hasNext ? 'Save &amp; Next clip ›' : 'Save &amp; Finish ›'}</b> button to save and continue.</div>
          </div>`
-      : `<div class="hint">Play the clip, then <b>pause and step frame-by-frame</b> (arrow keys or the ◀ frame ▶ buttons) to land on the exact frame where the colour returns — then press the red <b>Mark</b> button. When you're happy, press the green <b>Next clip</b> to save and move on.</div>`;
+      : `<div class="hint">${v.stampFrame != null
+           ? `Frame-step to where the colour returns, then <b>Mark</b>.`
+           : `Frame-step to the colour return, then <b>Mark</b>.`}</div>`;
     return body
       + (state.msg ? `<div class="ok">${esc(state.msg)}</div>` : '')
       + (state.err ? `<div class="err">${esc(state.err)}</div>` : '');
@@ -366,18 +382,45 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     return { vid: document.getElementById('vid'), fps: Number(v?.fps) || 30 };
   }
   let scrubbing = false;
+  // Current video object (for stamp/CRT lookups).
+  function currentVideo() {
+    return COLLECTIONS.find(c => c.id === state.col)?.videos[state.vidIndex] || null;
+  }
+  // Frame in the FILE at video-time t (the encoded/file fps).
+  function frameInFile(v, t) {
+    const ff = (v && v.fps) || 30;
+    return Math.round(t * ff);
+  }
+  // Real capillary refill time at video-time t: (frame − stampFrame) / realFps.
+  // The stamp lives in the recording's timeline, bridged to the file by frame #.
+  function crtAt(v, t) {
+    if (!v || v.stampFrame == null || !v.fps || !v.realFps) return null;
+    return (frameInFile(v, t) - v.stampFrame) / v.realFps;
+  }
   function updateClockNow() {
     const { vid, fps } = playerCtx();
     if (!vid) return;
+    const v = currentVideo();
     const c = document.getElementById('clock');
     const f = document.getElementById('frame');
     const pp = document.getElementById('playpause');
     const sc = document.getElementById('scrub');
-    if (c) c.textContent = fmt(vid.currentTime);
-    if (f) f.textContent = `frame ${frameOf(vid.currentTime, fps)} · ${fps} fps`;
+    const t = vid.currentTime;
+    const crt = crtAt(v, t);
+    if (crt != null) {
+      // Stamped clip: count time from the pressure release only (never negative).
+      if (c) c.textContent = fmt(Math.max(0, crt));
+      const cf = frameInFile(v, t);
+      if (f) f.textContent = crt < 0
+        ? `before release · frame ${cf} of ${v.stampFrame}`
+        : `frame ${cf} · release frame ${v.stampFrame} · ${v.realFps.toFixed(1)} fps`;
+    } else {
+      if (c) c.textContent = fmt(t);
+      if (f) f.textContent = `frame ${frameOf(t, fps)} · ${fps} fps`;
+    }
     if (pp) pp.textContent = vid.paused ? '▶' : '⏸';
     if (sc && !scrubbing && isFinite(vid.duration) && vid.duration > 0) {
-      sc.value = String(Math.round((vid.currentTime / vid.duration) * 1000));
+      sc.value = String(Math.round((t / vid.duration) * 1000));
     }
   }
   function startClock() {
@@ -400,6 +443,15 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     window.__scrubT = setTimeout(() => { scrubbing = false; }, 250);
   };
 
+  // Place the little marker on the scrub bar at the release (stamp) point.
+  function positionStampTick(vid, v) {
+    const tick = document.getElementById('stampTick');
+    if (!tick) return;
+    if (!v || v.releaseFileTime == null || !isFinite(vid.duration) || vid.duration <= 0) { tick.hidden = true; return; }
+    tick.style.left = Math.max(0, Math.min(1, v.releaseFileTime / vid.duration)) * 100 + '%';
+    tick.hidden = false;
+  }
+
   /* ---------- buffering: hold the UI until the clip can play through ----------
      Marking must never be possible on a half-loaded clip, and the video element
      is never rebuilt mid-session, so this runs once per loaded clip. */
@@ -413,8 +465,38 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
   function attachVideoEvents() {
     const vid = document.getElementById('vid');
     if (!vid) return;
+    // Keep the chosen slow-mo across clips. load() resets playbackRate to 1,
+    // so (re)apply it once metadata is ready, not just now.
+    const applySpeed = () => { vid.playbackRate = state.speed || 1; };
+    applySpeed();
+    const v0 = currentVideo();
+    // Start stamped clips at the release moment, and mark it on the scrub bar,
+    // once we know the duration.
+    let jumped = false;
+    const onMeta = () => {
+      applySpeed();
+      // Size the video box to the clip's real aspect ratio (no wasted width).
+      if (vid.videoWidth && vid.videoHeight) {
+        const stage = vid.closest('.vid-stage');
+        if (stage) stage.style.setProperty('--vid-ar', vid.videoWidth + ' / ' + vid.videoHeight);
+      }
+      // For stamped clips, derive the ENCODED fps exactly from frame_count and
+      // the real file duration, then place the release at stampFrame / fileFps.
+      if (v0 && v0.stampFrame != null && v0.frameCount && isFinite(vid.duration) && vid.duration > 0) {
+        v0.fps = v0.frameCount / vid.duration;   // fileFps
+        v0.fpsMeasured = true;                    // trust this over passive detection
+        v0.releaseFileTime = v0.stampFrame / v0.fps;
+      }
+      positionStampTick(vid, v0);
+      if (!jumped && v0 && v0.releaseFileTime != null && isFinite(vid.duration)) {
+        jumped = true;
+        vid.currentTime = Math.min(v0.releaseFileTime, vid.duration);
+        updateClockNow();
+      }
+    };
+    vid.addEventListener('loadedmetadata', onMeta);
     setReady(false);
-    const ready = () => setReady(true);
+    const ready = () => { setReady(true); applySpeed(); };
     // canplaythrough = enough buffered to finish without stalling.
     vid.addEventListener('canplaythrough', ready);
     vid.addEventListener('loadeddata', () => { if (vid.readyState >= 3) ready(); });
@@ -429,6 +511,61 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     });
     if (vid.readyState >= 3) ready();
     vid.load();
+
+    // Fallback frame-rate detection from rendered frames — ONLY for clips with
+    // no stamp.json (frameCount is our deterministic source when present).
+    // This must never touch a stamped clip's fps: onMeta() has already computed
+    // it exactly from frame_count/duration, and a stamped clip's frame numbers
+    // are load-bearing for CRT math. Passive playback timing is noisy (display
+    // refresh, dropped frames) and previously raced onMeta, silently
+    // overwriting the correct fps the moment the student pressed Play —
+    // which made every frame-step jump the wrong amount of real time.
+    if (v0 && !v0.frameCount) {
+      detectFps(vid, fps => {
+        if (fps && isFinite(fps) && fps > 1 && !v0.frameCount) {
+          v0.fps = fps;
+          v0.fpsMeasured = true;
+          updateClockNow();   // refresh the "frame N · X fps" readout
+        }
+      });
+    }
+  }
+
+  /* Measures frame rate from the interval between real rendered frames while
+     the clip is PLAYING (seeks are ignored), then snaps to the nearest standard
+     rate. This corrects the frame number + the fps stored with each mark; it
+     does NOT change the reported time, which is already exact real seconds. */
+  function detectFps(vid, onFps) {
+    if (!vid || !('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return;
+    const intervals = [];
+    let last = null, frames = 0, finished = false;
+    const finish = () => {
+      if (finished) return; finished = true;
+      if (intervals.length < 4) return;
+      intervals.sort((a, b) => a - b);
+      const med = intervals[Math.floor(intervals.length / 2)];
+      if (!(med > 0)) return;
+      let fps = 1 / med;
+      // Snap to the NEAREST standard rate (not the first within range), so a
+      // true 30 fps clip reports 30 rather than the adjacent 29.97.
+      const common = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120];
+      let best = null, bestDiff = 0.5;
+      for (const c of common) {
+        const d = Math.abs(c - fps);
+        if (d < bestDiff) { best = c; bestDiff = d; }
+      }
+      onFps(best != null ? best : Math.round(fps * 1000) / 1000);
+    };
+    const onFrame = (now, meta) => {
+      if (last != null && !vid.paused) {
+        const dt = meta.mediaTime - last;
+        if (dt > 0.0002 && dt < 0.2) intervals.push(dt);   // ignore pause/seek jumps
+      }
+      last = meta.mediaTime;
+      if (intervals.length >= 15) return finish();
+      if (++frames < 150) vid.requestVideoFrameCallback(onFrame); else finish();
+    };
+    vid.requestVideoFrameCallback(onFrame);
   }
 
   /* Play/pause + precise frame stepping (pauses, then moves ±1 frame). */
@@ -523,12 +660,25 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     if (act === 'stepfwd')   { stepFrames(1);  return; }
     if (act === 'jumpback')  { seekBy(-1);     return; }
     if (act === 'jumpfwd')   { seekBy(1);      return; }
+    if (act === 'speed') {   // slow-mo doesn't change the marked time, only how it plays
+      state.speed = Number(id) || 1;
+      const { vid } = playerCtx();
+      if (vid) vid.playbackRate = state.speed;
+      document.querySelectorAll('.speed-btn').forEach(b =>
+        b.classList.toggle('active', b.textContent === (state.speed === 1 ? '1×' : state.speed + '×')));
+      return;   // no render — must not rebuild the <video>
+    }
 
     // Marking must NOT call render() — that would rebuild <video> and re-buffer.
     if (act === 'mark') {
       const vidEl = document.getElementById('vid');
       if (!vidEl || vidEl.currentTime <= 0) { state.err = 'Play the clip first, then mark.'; return renderMarkPanel(); }
       vidEl.pause();
+      const v = currentVideo();
+      if (v && v.stampFrame != null && v.fps && frameInFile(v, vidEl.currentTime) < v.stampFrame) {
+        state.err = `That's before the release (frame ${v.stampFrame}). Step forward past the release, then mark the colour return.`;
+        return renderMarkPanel();
+      }
       state.marked = vidEl.currentTime;
       updateClockNow();
       return renderMarkPanel();
@@ -536,9 +686,23 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     if (act === 'remark') { state.marked = null; return renderMarkPanel(); }
 
     if (act === 'submit') {
+      if (state.saving) return;
       const col = COLLECTIONS.find(c => c.id === state.col);
       const v = col.videos[state.vidIndex];
       const fps = Number(v.fps) || 30;
+      const goNext = () => {
+        const hasNext = state.vidIndex < col.videos.length - 1;
+        if (hasNext) { openVideo(state.vidIndex + 1); }
+        else { state.view = 'videos'; state.marked = null; state.msg = 'Collection complete — thank you!'; }
+        return render();
+      };
+
+      // No mark → treat the green button as a plain "skip to next clip".
+      if (state.marked == null) return goNext();
+
+      const crt = crtAt(v, state.marked);
+      const rawTime = Number(state.marked.toFixed(3));           // file position (s) of the mark
+      const markedFrame = frameInFile(v, state.marked);           // recording frame at the mark
       const payload = {
         name: state.user.name,
         status: state.user.status,
@@ -546,33 +710,47 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
         collection: col.name,
         videoIndex: state.vidIndex + 1,
         videoTitle: v.title,
-        timeSeconds: Number(state.marked.toFixed(3)),
-        fps,
-        frameIndex: frameOf(state.marked, fps),
+        // timeSeconds is the study value: real CRT since release when stamped,
+        // otherwise the raw mark time.
+        timeSeconds: crt != null ? Number(Math.max(0, crt).toFixed(3)) : rawTime,
+        crtSeconds: crt != null ? Number(Math.max(0, crt).toFixed(3)) : '',
+        rawTimeSeconds: rawTime,
+        stampTimeSeconds: v.releaseFileTime != null ? Number(v.releaseFileTime.toFixed(3)) : '',
+        fps: v.realFps != null ? Number(v.realFps.toFixed(3)) : fps,   // capture fps (drives CRT)
+        frameIndex: markedFrame,
+        stampFrame: v.stampFrame != null ? v.stampFrame : '',
         submittedAt: new Date().toISOString()
       };
-      state.saving = true; renderMarkPanel();   // panel only — keeps the clip buffered
+      // 1) Store LOCALLY first — this can never fail, so the mark is safe even
+      //    if the Excel helper (or, later, the network) is down.
+      const rec = { ...payload, synced: false };
+      annotations.push(rec);
+      saveAnnotations();
+      // 2) Try to push to the backend in the background; a failure just leaves
+      //    the record queued (the header shows "N unsaved" to retry later).
+      state.saving = true; renderMarkPanel();
       try {
         await saveToExcel(payload);
-        annotations.push(payload);
+        rec.synced = true;
         saveAnnotations();
-        state.saving = false;
-        const hasNext = state.vidIndex < col.videos.length - 1;
-        if (hasNext) {
-          openVideo(state.vidIndex + 1);
-          state.msg = 'Saved to data.xlsx. Moving to the next video.';
-        } else {
-          state.view = 'videos';
-          state.marked = null;
-          state.msg = 'Saved to data.xlsx. Collection complete — thank you!';
-        }
-      } catch (e) {
-        state.saving = false;
-        state.err = 'Could not update data.xlsx. Start excel_helper.py, then try Save again. ' + e.message;
-      }
-      return render();
+      } catch (e) { /* stays queued; flushQueue() retries */ }
+      state.saving = false;
+      return goNext();   // always advance — the annotation is already stored
     }
+
+    if (act === 'retrysync') { await flushQueue(); return render(); }
   };
+
+  /* Push any annotations that never reached the backend. Stops on the first
+     failure (backend still down) and leaves the rest queued. */
+  async function flushQueue() {
+    const pending = annotations.filter(a => a.synced === false);
+    for (const a of pending) {
+      try { await saveToExcel(a); a.synced = true; }
+      catch { break; }
+    }
+    saveAnnotations();
+  }
 
   // Re-render on system theme change when the user hasn't pinned a theme.
   if (window.matchMedia) {
@@ -596,13 +774,41 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
       const uniq = [...new Set(names)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       if (!uniq.length) return null;
       const base = folder.path.endsWith('/') ? folder.path : folder.path + '/';
-      return uniq.map((name, i) => ({
-        id: folder.id + '-' + i,
-        title: 'CRT Test ' + String(i + 1).padStart(2, '0'),
-        file: name,
-        url: base + encodeURIComponent(name),
-        fps: Number(FPS_OVERRIDES[name]) || DEFAULT_FPS
+      return Promise.all(uniq.map(async (name, i) => {
+        const stamp = await fetchStamp(base, name);
+        return {
+          id: folder.id + '-' + i,
+          title: 'CRT Test ' + String(i + 1).padStart(2, '0'),
+          file: name,
+          url: base + encodeURIComponent(name),
+          // fileFps = the ENCODED frame rate of the .mp4 (used for stepping and
+          // for turning video-time into a frame number). Refined from
+          // frame_count/duration once metadata loads; else detected, else 30.
+          fps: Number(FPS_OVERRIDES[name]) || DEFAULT_FPS,
+          // realFps = the true CAPTURE rate. The file is CFR-encoded at a
+          // different rate, so the stamp's timeline is bridged by FRAME NUMBER:
+          //   real CRT = (markedFrame − stampFrame) / realFps.
+          realFps: stamp && stamp.frame_count && stamp.recording_duration_s
+            ? stamp.frame_count / stamp.recording_duration_s
+            : (stamp && Number(stamp.fps)) || null,
+          stampFrame: stamp && stamp.stamped_frame != null ? stamp.stamped_frame : null,
+          stamped: !!(stamp && stamp.stamped),
+          frameCount: stamp && stamp.frame_count != null ? stamp.frame_count : null,
+          recDuration: stamp && stamp.recording_duration_s != null ? stamp.recording_duration_s : null,
+          stampTimeS: stamp && stamp.stamp_time_s != null ? stamp.stamp_time_s : null
+        };
       }));
+    } catch { return null; }
+  }
+
+  /* Each clip may ship a "<name>.stamp.json" describing the release ("stamp")
+     moment. CRT is measured from stamp_time_s, not from the video's start. */
+  async function fetchStamp(base, name) {
+    const jsonName = name.replace(/\.[^.]+$/, '') + '.stamp.json';
+    try {
+      const res = await fetch(base + encodeURIComponent(jsonName), { cache: 'no-store' });
+      if (!res.ok) return null;
+      return await res.json();
     } catch { return null; }
   }
 
@@ -638,6 +844,7 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
 
   render();
   discoverAll();
+  flushQueue().then(() => render());   // retry any marks left unsaved from a previous session
 })();
 </script>
 </body>

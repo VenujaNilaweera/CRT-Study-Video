@@ -26,9 +26,12 @@ HEADERS = [
     "Collection",
     "Video #",
     "Video Title",
-    "Time (s)",
-    "FPS",
-    "Frame #",
+    "CRT (s)",          # study value: real refill time since release = (Frame# - Stamp frame) / FPS
+    "Mark file-time (s)",  # position in the played clip where colour return was marked
+    "Release file-time (s)",  # position in the played clip of the release frame
+    "FPS",              # capture fps that drives CRT (from the recording's JSON)
+    "Frame #",          # recording frame at the mark
+    "Stamp frame",      # recording frame of the pressure release
     "Submitted At",
 ]
 
@@ -59,7 +62,7 @@ def ensure_sheet():
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
-        sheet.column_dimensions[get_column_letter(col)].width = [22, 16, 12, 18, 10, 24, 12, 8, 10, 22][col - 1]
+        sheet.column_dimensions[get_column_letter(col)].width = [22, 16, 12, 18, 10, 24, 12, 12, 12, 8, 10, 12, 22][col - 1]
 
     # Self-heal: drop any leftover duplicate header rows below row 1
     # (e.g. left behind when the header layout changed between versions).
@@ -83,12 +86,16 @@ def append_annotation(payload: dict) -> int:
         payload.get("videoIndex", ""),
         payload.get("videoTitle", ""),
         payload.get("timeSeconds", ""),
+        payload.get("rawTimeSeconds", ""),
+        payload.get("stampTimeSeconds", ""),
         payload.get("fps", ""),
         payload.get("frameIndex", ""),
+        payload.get("stampFrame", ""),
         submitted_at,
     ]
     sheet.append(row)
-    sheet.cell(sheet.max_row, 7).number_format = "0.000"
+    for col in (7, 8, 9):  # CRT / Raw mark / Release — 3-decimal seconds
+        sheet.cell(sheet.max_row, col).number_format = "0.000"
     WORKBOOK_PATH.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(WORKBOOK_PATH)
     return sheet.max_row
