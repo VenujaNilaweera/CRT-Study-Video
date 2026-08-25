@@ -298,7 +298,8 @@ video {
 .video-panel { gap: 12px; }
 .control-panel { gap: 0; }
 
-/* ---- Desktop: fit the whole player in one screen, no page scroll ---- */
+/* ---- Desktop: fit the whole player in one screen, no page scroll.
+       The video flexes but the transport + Mark button never scroll away. ---- */
 @media (min-width: 861px) {
   body[data-view="player"] { height: 100dvh; overflow: hidden; }
   body[data-view="player"] .wrap {
@@ -312,14 +313,23 @@ video {
   body[data-view="player"] .page-head { flex: none; }
   body[data-view="player"] .player-layout { flex: 1; min-height: 0; }
   body[data-view="player"] .video-panel { min-height: 0; }
-  body[data-view="player"] video {
-    flex: 1;
+  body[data-view="player"] .vid-stage { flex: 1; min-height: 0; }
+  body[data-view="player"] .vid-stage video {
+    height: 100%;
     min-height: 0;
-    height: auto;
     object-fit: contain;
   }
+  body[data-view="player"] .scrub-row,
+  body[data-view="player"] .transport,
+  body[data-view="player"] .readout { flex: none; }
   body[data-view="player"] .nav-row { flex: none; margin-top: 0; }
   body[data-view="player"] .control-panel { min-height: 0; overflow: auto; }
+}
+
+/* ---- Narrow / short screens: cap the video so the clock + Mark button
+       stay visible under it without scrolling. ---- */
+@media (max-width: 860px) {
+  .vid-stage video { max-height: 46dvh; object-fit: contain; }
 }
 
 .readout {
@@ -329,11 +339,11 @@ video {
   gap: 16px;
   background: var(--header-bg);
   border-radius: var(--radius);
-  padding: 18px 20px;
+  padding: 14px 18px;
   flex-wrap: wrap;
 }
 .clock { font-family: var(--mono); display: flex; flex-direction: column; }
-.clock .val { font-size: clamp(28px, 6vw, 38px); font-weight: 700; color: var(--header-fg); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+.clock .val { font-size: clamp(24px, 5vw, 32px); font-weight: 700; color: var(--header-fg); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
 .clock .lbl { font-size: 10px; font-weight: 500; letter-spacing: 1.6px; color: rgba(255,255,255,.5); text-transform: uppercase; margin-bottom: 3px; }
 .clock .frame { font-size: 11.5px; color: rgba(255,255,255,.55); margin-top: 3px; }
 
@@ -353,6 +363,8 @@ video {
 }
 .mark-btn:hover { background: var(--pulse-2); }
 .mark-btn:active { transform: translateY(1px); }
+.mark-btn:disabled { opacity: .4; cursor: not-allowed; }
+.transport .tbtn:disabled { opacity: .4; cursor: not-allowed; }
 
 .marked {
   background: var(--pulse-soft);
@@ -378,6 +390,93 @@ video {
 
 .nav-row { display: flex; gap: 10px; }
 .nav-row .btn { flex: 1; }
+
+/* ---- Video stage + buffering overlay ---- */
+.vid-stage { position: relative; min-height: 0; display: flex; }
+.vid-stage video { width: 100%; }
+.vid-loading {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: rgba(0,0,0,.72);
+  color: #fff; font-family: var(--mono); font-size: 13px;
+  border-radius: var(--radius);
+  z-index: 2;
+}
+.vid-loading .spin {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Scrub bar ---- */
+.scrub-row { display: flex; }
+.scrub {
+  width: 100%; height: 26px; margin: 0;
+  -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer;
+}
+.scrub::-webkit-slider-runnable-track { height: 6px; border-radius: 4px; background: var(--line); }
+.scrub::-moz-range-track { height: 6px; border-radius: 4px; background: var(--line); }
+.scrub::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; border-radius: 50%; margin-top: -5px;
+  background: var(--teal); border: 2px solid var(--surface);
+}
+.scrub::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--surface);
+  background: var(--teal);
+}
+
+/* ---- Transport: play/pause + frame stepping ---- */
+.transport { display: flex; gap: 8px; align-items: stretch; }
+.transport .tbtn {
+  flex: 1;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 11px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--mono);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .15s, background .15s, transform .05s;
+}
+.transport .tbtn:hover { border-color: var(--teal); background: var(--bg); }
+.transport .tbtn:active { transform: translateY(1px); }
+.transport .tbtn.play {
+  flex: 0 0 auto;
+  min-width: 64px;
+  background: var(--teal);
+  color: #fff;
+  border-color: var(--teal);
+  font-size: 17px;
+}
+.transport .tbtn.play:hover { background: var(--teal-2); }
+
+/* ---- Keyboard shortcut hints ---- */
+.shortcuts {
+  display: flex; flex-wrap: wrap; gap: 7px 14px;
+  margin-top: 13px;
+  font-size: 11.5px; color: var(--muted);
+}
+.shortcuts span { display: inline-flex; align-items: center; gap: 5px; }
+kbd {
+  font-family: var(--mono); font-size: 10.5px; line-height: 1;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 6px;
+  padding: 3px 6px; color: var(--ink-2);
+  min-width: 15px; text-align: center;
+}
+.mark-btn kbd { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.3); color: #fff; margin-left: 4px; }
+
+@media (max-width: 520px) {
+  .transport { flex-wrap: wrap; }
+  .transport .tbtn { flex: 1 1 30%; }
+  .transport .tbtn.play { order: -1; flex: 1 1 100%; }
+}
 
 /* ---------- Responsive ---------- */
 @media (max-width: 860px) {

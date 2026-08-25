@@ -91,7 +91,9 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     const m = Math.floor(t / 60), s = t % 60;
     return String(m).padStart(2, '0') + ':' + s.toFixed(2).padStart(5, '0');
   };
-  const frameOf = (t, fps) => Math.round(t * (Number(fps) || 30));
+  // The frame CONTAINING time t is floor(t*fps) — never round(), which would
+  // report the next frame once t sits past a frame's midpoint.
+  const frameOf = (t, fps) => Math.floor(t * (Number(fps) || 30) + 1e-6);
   const csvCell = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
   /* ---------- persistence ---------- */
@@ -204,7 +206,7 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
     else if (state.view === 'player') html = viewPlayer();
     app.innerHTML = html;
 
-    if (state.view === 'player') startClock(); else stopClock();
+    if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
   }
 
   function viewLogin() {
@@ -286,55 +288,188 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
       </div>
       <div class="player-layout">
         <div class="video-panel">
-          <video id="vid" src="${esc(v.url)}" controls playsinline preload="metadata"></video>
-          <div class="nav-row">
-            <button class="btn neutral" onclick="window.__act('prev')" ${hasPrev ? '' : 'disabled'}>‹ Previous</button>
-            <button class="btn neutral" onclick="window.__act('restart')">↺ Restart clip</button>
-            <button class="btn neutral" onclick="window.__act('next')" ${hasNext ? '' : 'disabled'}>Next ›</button>
+          <div class="vid-stage">
+            <video id="vid" src="${esc(v.url)}" playsinline preload="auto"></video>
+            <div class="vid-loading" id="vidLoading"><span class="spin"></span> Buffering clip…</div>
           </div>
-        </div>
-        <div class="control-panel">
+          <div class="scrub-row">
+            <input type="range" id="scrub" class="scrub" min="0" max="1000" value="0" step="1"
+                   oninput="window.__scrub(this.value)" title="Scrub through the clip">
+          </div>
+          <div class="transport">
+            <button class="tbtn" title="Previous frame (← or ,)" onclick="window.__act('stepback')">◀ frame</button>
+            <button class="tbtn play" id="playpause" title="Play / Pause (Space)" onclick="window.__act('playpause')">▶</button>
+            <button class="tbtn" title="Next frame (→ or .)" onclick="window.__act('stepfwd')">frame ▶</button>
+            <button class="tbtn nextvid" id="nextVidBtn"
+                    title="Saves your mark, then moves on (N)"
+                    onclick="window.__act('submit')">${hasNext ? 'Save &amp; Next clip ›' : 'Save &amp; Finish ›'}</button>
+          </div>
           <div class="readout">
             <div class="clock">
               <span class="lbl">Video time</span>
               <span class="val" id="clock">00:00.00</span>
               <span class="frame" id="frame">frame 0 · ${fps} fps</span>
             </div>
-            <button class="mark-btn" onclick="window.__act('mark')">● Mark colour change</button>
+            <button class="mark-btn" id="markBtn" onclick="window.__act('mark')">● Mark colour change <kbd>M</kbd></button>
           </div>
-          ${state.marked != null ? `
-            <div class="marked">
-              <div class="headline">You marked the colour change at</div>
-              <div><span class="mt">${fmt(state.marked)}</span></div>
-              <div class="meta">${state.marked.toFixed(3)} s · frame ${frameOf(state.marked, fps)}</div>
-              <div class="actions">
-                <button class="btn ghost small" onclick="window.__act('remark')">↺ Retry</button>
-                <button class="btn small" onclick="window.__act('submit')" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Saving…' : (hasNext ? 'Save & Next ›' : 'Save & Finish')}</button>
-              </div>
-            </div>` : `<div class="hint">Play the video, then press the red button the instant you perceive the colour returning. You can retry as many times as you like before saving.</div>`}
-          ${state.msg ? `<div class="ok">${esc(state.msg)}</div>` : ''}
-          ${state.err ? `<div class="err">${esc(state.err)}</div>` : ''}
+        </div>
+        <div class="control-panel">
+          <div id="markPanel">${markPanelHtml()}</div>
+          <div class="shortcuts">
+            <span><kbd>Space</kbd> play / pause</span>
+            <span><kbd>←</kbd><kbd>→</kbd> step 1 frame</span>
+            <span><kbd>⇧</kbd>+<kbd>←→</kbd> 10 frames</span>
+            <span><kbd>M</kbd> mark</span>
+            <span><kbd>N</kbd> save &amp; next</span>
+          </div>
+          <div class="nav-row">
+            <button class="btn neutral" onclick="window.__act('prev')" ${hasPrev ? '' : 'disabled'}>‹ Prev</button>
+            <button class="btn neutral" onclick="window.__act('restart')">↺ Restart</button>
+          </div>
         </div>
       </div>`;
   }
 
-  /* ---------- live clock ---------- */
+  /* The mark panel is re-rendered ON ITS OWN so that marking/saving never
+     rebuilds the <video> element (which would restart buffering). */
+  function markPanelHtml() {
+    const col = COLLECTIONS.find(c => c.id === state.col);
+    const v = col?.videos[state.vidIndex];
+    if (!v) return '';
+    const fps = Number(v.fps) || 30;
+    const hasNext = state.vidIndex < col.videos.length - 1;
+    const body = state.marked != null
+      ? `<div class="marked">
+           <div class="headline">Colour change marked at</div>
+           <div><span class="mt">${fmt(state.marked)}</span></div>
+           <div class="meta">${state.marked.toFixed(3)} s · frame ${frameOf(state.marked, fps)}</div>
+           <div class="actions">
+             <button class="btn ghost small" onclick="window.__act('remark')">↺ Re-mark</button>
+           </div>
+           <div class="tip">Press the green <b>${hasNext ? 'Save &amp; Next clip ›' : 'Save &amp; Finish ›'}</b> button to save and continue.</div>
+         </div>`
+      : `<div class="hint">Play the clip, then <b>pause and step frame-by-frame</b> (arrow keys or the ◀ frame ▶ buttons) to land on the exact frame where the colour returns — then press the red <b>Mark</b> button. When you're happy, press the green <b>Next clip</b> to save and move on.</div>`;
+    return body
+      + (state.msg ? `<div class="ok">${esc(state.msg)}</div>` : '')
+      + (state.err ? `<div class="err">${esc(state.err)}</div>` : '');
+  }
+  function renderMarkPanel() {
+    const el = document.getElementById('markPanel');
+    if (el) el.innerHTML = markPanelHtml();
+  }
+
+  /* ---------- live clock + transport ---------- */
   let clockTimer = null;
+  function playerCtx() {
+    const col = COLLECTIONS.find(c => c.id === state.col);
+    const v = col?.videos[state.vidIndex];
+    return { vid: document.getElementById('vid'), fps: Number(v?.fps) || 30 };
+  }
+  let scrubbing = false;
+  function updateClockNow() {
+    const { vid, fps } = playerCtx();
+    if (!vid) return;
+    const c = document.getElementById('clock');
+    const f = document.getElementById('frame');
+    const pp = document.getElementById('playpause');
+    const sc = document.getElementById('scrub');
+    if (c) c.textContent = fmt(vid.currentTime);
+    if (f) f.textContent = `frame ${frameOf(vid.currentTime, fps)} · ${fps} fps`;
+    if (pp) pp.textContent = vid.paused ? '▶' : '⏸';
+    if (sc && !scrubbing && isFinite(vid.duration) && vid.duration > 0) {
+      sc.value = String(Math.round((vid.currentTime / vid.duration) * 1000));
+    }
+  }
   function startClock() {
     stopClock();
-    const col = COLLECTIONS.find(c => c.id === state.col);
-    const fps = Number(col?.videos[state.vidIndex]?.fps) || 30;
-    clockTimer = setInterval(() => {
-      const vid = document.getElementById('vid');
-      const c = document.getElementById('clock');
-      const f = document.getElementById('frame');
-      if (vid && c) c.textContent = fmt(vid.currentTime);
-      if (vid && f) f.textContent = `frame ${frameOf(vid.currentTime, fps)} · ${fps} fps`;
-    }, 40);
+    clockTimer = setInterval(updateClockNow, 40);
+    updateClockNow();
   }
   function stopClock() {
     if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
   }
+
+  /* Scrub bar — seeks while paused so stepping stays frame-accurate. */
+  window.__scrub = function(val) {
+    const { vid } = playerCtx();
+    if (!vid || !isFinite(vid.duration)) return;
+    scrubbing = true;
+    vid.currentTime = (Number(val) / 1000) * vid.duration;
+    updateClockNow();
+    clearTimeout(window.__scrubT);
+    window.__scrubT = setTimeout(() => { scrubbing = false; }, 250);
+  };
+
+  /* ---------- buffering: hold the UI until the clip can play through ----------
+     Marking must never be possible on a half-loaded clip, and the video element
+     is never rebuilt mid-session, so this runs once per loaded clip. */
+  function setReady(ready) {
+    const overlay = document.getElementById('vidLoading');
+    const markBtn = document.getElementById('markBtn');
+    if (overlay) overlay.style.display = ready ? 'none' : '';
+    if (markBtn) markBtn.disabled = !ready;
+    document.querySelectorAll('.transport .tbtn').forEach(b => { b.disabled = !ready; });
+  }
+  function attachVideoEvents() {
+    const vid = document.getElementById('vid');
+    if (!vid) return;
+    setReady(false);
+    const ready = () => setReady(true);
+    // canplaythrough = enough buffered to finish without stalling.
+    vid.addEventListener('canplaythrough', ready);
+    vid.addEventListener('loadeddata', () => { if (vid.readyState >= 3) ready(); });
+    vid.addEventListener('waiting', () => setReady(false));
+    vid.addEventListener('playing', ready);
+    vid.addEventListener('seeked', updateClockNow);
+    vid.addEventListener('play', updateClockNow);
+    vid.addEventListener('pause', updateClockNow);
+    vid.addEventListener('error', () => {
+      const overlay = document.getElementById('vidLoading');
+      if (overlay) overlay.textContent = 'Could not load this clip. Check the file, then reload.';
+    });
+    if (vid.readyState >= 3) ready();
+    vid.load();
+  }
+
+  /* Play/pause + precise frame stepping (pauses, then moves ±1 frame). */
+  function togglePlay() {
+    const { vid } = playerCtx();
+    if (!vid) return;
+    if (vid.paused) vid.play().catch(() => {}); else vid.pause();
+    updateClockNow();
+  }
+  function stepFrames(n) {
+    const { vid, fps } = playerCtx();
+    if (!vid) return;
+    vid.pause();
+    const frame = frameOf(vid.currentTime, fps);          // floor-based: steps both ways
+    const lastFrame = isFinite(vid.duration) ? Math.max(0, Math.ceil(vid.duration * fps) - 1) : Infinity;
+    const target = Math.min(Math.max(0, frame + n), lastFrame);
+    // Aim at the frame's midpoint so we land inside it, never on its boundary.
+    vid.currentTime = (target + 0.5) / fps;
+    updateClockNow();
+  }
+
+  /* Keyboard (player only): Space=play/pause, ←/→ or , . =frame step
+     (Shift = 10 frames), ↑/↓ or J/L = 1 s, M=mark, R=restart. */
+  function onPlayerKey(e) {
+    if (state.view !== 'player') return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    const step = e.shiftKey ? 10 : 1;
+    switch (e.code) {
+      case 'Space': case 'KeyK': e.preventDefault(); togglePlay(); break;
+      case 'ArrowLeft': case 'Comma': e.preventDefault(); stepFrames(-step); break;
+      case 'ArrowRight': case 'Period': e.preventDefault(); stepFrames(step); break;
+      case 'ArrowDown': case 'KeyJ': e.preventDefault(); seekBy(-1); break;
+      case 'ArrowUp': case 'KeyL': e.preventDefault(); seekBy(1); break;
+      case 'KeyM': e.preventDefault(); window.__act('mark'); break;
+      case 'KeyN': e.preventDefault(); window.__act('submit'); break;
+      case 'KeyR': e.preventDefault(); window.__act('restart'); break;
+      default: return;
+    }
+  }
+  document.addEventListener('keydown', onPlayerKey, true);
 
   function openVideo(index) {
     state.vidIndex = index;
@@ -381,13 +516,24 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
       return;
     }
 
+    // Transport controls mutate the <video> in place — never re-render here,
+    // or the element is rebuilt and playback position is lost.
+    if (act === 'playpause') { togglePlay();   return; }
+    if (act === 'stepback')  { stepFrames(-1); return; }
+    if (act === 'stepfwd')   { stepFrames(1);  return; }
+    if (act === 'jumpback')  { seekBy(-1);     return; }
+    if (act === 'jumpfwd')   { seekBy(1);      return; }
+
+    // Marking must NOT call render() — that would rebuild <video> and re-buffer.
     if (act === 'mark') {
       const vidEl = document.getElementById('vid');
-      if (!vidEl || vidEl.currentTime <= 0) { state.err = 'Play the video first, then mark.'; return render(); }
+      if (!vidEl || vidEl.currentTime <= 0) { state.err = 'Play the clip first, then mark.'; return renderMarkPanel(); }
+      vidEl.pause();
       state.marked = vidEl.currentTime;
-      return render();
+      updateClockNow();
+      return renderMarkPanel();
     }
-    if (act === 'remark') { state.marked = null; return render(); }
+    if (act === 'remark') { state.marked = null; return renderMarkPanel(); }
 
     if (act === 'submit') {
       const col = COLLECTIONS.find(c => c.id === state.col);
@@ -405,7 +551,7 @@ const EXCEL_HELPER_URL = `http://${location.hostname || '127.0.0.1'}:8787/annota
         frameIndex: frameOf(state.marked, fps),
         submittedAt: new Date().toISOString()
       };
-      state.saving = true; render();
+      state.saving = true; renderMarkPanel();   // panel only — keeps the clip buffered
       try {
         await saveToExcel(payload);
         annotations.push(payload);
