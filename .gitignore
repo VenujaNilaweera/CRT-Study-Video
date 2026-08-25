@@ -1,6 +1,32 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+pip-log.txt
+pip-delete-this-directory.txt
 
 # Node build scratch (contains a symlink into a machine-local cache)
 work/
@@ -10,3 +36,9 @@ data.xlsx
 
 # Pre-conversion video originals kept only as a local safety copy
 videos/_original_backup/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
