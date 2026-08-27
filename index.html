@@ -46,7 +46,7 @@
    If some clips run at another frame rate, add an override in FPS_OVERRIDES
    keyed by the video's storage_path.
    ========================================================================= */
-
+//edededeeded
 const DEFAULT_FPS = 30;
 const FPS_OVERRIDES = {
   // 'somefile.mp4': 60,
@@ -63,6 +63,7 @@ let COLLECTIONS = MANUAL_COLLECTIONS.map(c => ({ ...c }));
 const STORAGE_KEY = 'crt-study-annotations';
 const SESSION_KEY = 'crt-study-session';
 const THEME_KEY = 'crt-theme';
+const INTRO_KEY = 'crt-intro-seen';   // login intro animation plays once per browser
 
 /* =========================================================================
    SUPABASE BACKEND
@@ -241,21 +242,72 @@ const SUPA_HEADERS = {
     app.innerHTML = html;
 
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
+
+    // Once the login intro has played, remember it so later visits go straight
+    // to a settled page instead of replaying the animation.
+    if (state.view === 'login' && app.querySelector('.login-layout.intro')) {
+      try { localStorage.setItem(INTRO_KEY, '1'); } catch {}
+    }
+  }
+
+  // Wrap each word so the quote can fade in word by word. The delay is set
+  // per word inline; CSS alone can't stagger an arbitrary number of children.
+  function words(text) {
+    return text.split(' ').map((w, i) =>
+      `<span class="w" style="--wd:${(i * 55 + 320)}ms">${esc(w)}</span>`).join(' ');
   }
 
   function viewLogin() {
-    return `<div class="card" style="max-width:460px;margin:12px auto;">
-      <div class="page-head">
-        <h2>Join the study</h2>
-        <p class="muted">Watch short capillary-refill clips and press one button the moment you see the skin colour return.</p>
+    // The intro animation plays once per browser, not on every re-render
+    // (a failed validation re-renders this view and replaying it would nag).
+    let seen = false;
+    try { seen = localStorage.getItem(INTRO_KEY) === '1'; } catch {}
+    const anim = seen ? '' : ' intro';
+
+    return `<div class="login-layout${anim}">
+      <div class="card login-card">
+        <div class="page-head">
+          <h2>Join the study</h2>
+          <p class="muted">Watch short capillary-refill clips and press one button the moment you see the skin colour return.</p>
+        </div>
+        <div class="field">
+          <label for="f-name">Name or initials</label>
+          <input id="f-name" placeholder="e.g. A.P. or Ann" autocomplete="off" maxlength="40">
+          <span class="field-hint">Part of your name or initials is enough — it only groups your responses.</span>
+        </div>
+        <div class="field"><label for="f-status">Professional role</label>
+          <select id="f-status"><option value="">Select…</option><option>Nurse</option><option>Doctor</option><option>Medical student</option><option>Paramedic</option><option>Researcher</option><option>Other</option></select></div>
+        <div class="field"><label for="f-age">Age group</label>
+          <select id="f-age"><option value="">Select…</option><option>18-24</option><option>25-34</option><option>35-44</option><option>45-54</option><option>55+</option></select></div>
+        <button class="btn block" onclick="window.__act('login')">Start</button>
+        ${state.err ? `<div class="err">${esc(state.err)}</div>` : ''}
       </div>
-      <div class="field"><label>Full name</label><input id="f-name" placeholder="e.g. A. Perera" autocomplete="name"></div>
-      <div class="field"><label>Status / role</label>
-        <select id="f-status"><option value="">Select…</option><option>Nurse</option><option>Doctor</option><option>Medical student</option><option>Paramedic</option><option>Researcher</option><option>Other</option></select></div>
-      <div class="field"><label>Age group</label>
-        <select id="f-age"><option value="">Select…</option><option>18-24</option><option>25-34</option><option>35-44</option><option>45-54</option><option>55+</option></select></div>
-      <button class="btn block" onclick="window.__act('login')">Start</button>
-      ${state.err ? `<div class="err">${esc(state.err)}</div>` : ''}
+
+      <aside class="about-panel">
+        <figure class="about-quote">
+          <span class="qm open" aria-hidden="true">&ldquo;</span>
+          <blockquote>${words('Two clinicians watch the same refill and read two different times.')}</blockquote>
+          <span class="qm close" aria-hidden="true">&rdquo;</span>
+        </figure>
+
+        <div class="about-body">
+          <span class="about-eyebrow">About this research</span>
+          <h3>Clinical phase detection in capillary refill</h3>
+          <p>Capillary refill is judged by eye — and trained clinicians disagree on where it ends. Your marks measure that variation against frame-accurate recordings.</p>
+
+          <ol class="about-steps">
+            <li><span class="n">1</span><div><b>Watch</b> a short clip</div></li>
+            <li><span class="n">2</span><div><b>Mark</b> when the colour returns</div></li>
+            <li><span class="n">3</span><div><b>Save</b> and move on</div></li>
+          </ol>
+
+          <div class="about-note">
+            <b>No full names.</b> Initials are enough — they only group your own responses. No patient data is collected.
+          </div>
+
+          <p class="about-foot">About 5 minutes · Saves automatically</p>
+        </div>
+      </aside>
     </div>`;
   }
 
@@ -300,6 +352,23 @@ const SUPA_HEADERS = {
       ${items || '<div class="card muted">No videos in this collection.</div>'}`;
   }
 
+  /* ---------- per-viewer watermark ----------
+     Traceability, not prevention: nothing in a browser can stop a screenshot
+     or a screen recording, but a leaked capture carries the account it came
+     from. Placed in the CORNERS at low opacity on purpose — this is a colour
+     perception study, so the nail bed in the middle of the frame must stay
+     completely unobstructed or the watermark would bias the measurement. */
+  function watermarkHtml() {
+    if (!state.user) return '';
+    const who = `${state.user.name} · ${state.user.status}`;
+    const when = new Date().toISOString().slice(0, 10);
+    const tag = esc(`${who} · ${when}`);
+    return `<div class="wmark" aria-hidden="true">
+      <span class="wm tl">${tag}</span>
+      <span class="wm br">${tag}</span>
+    </div>`;
+  }
+
   function viewPlayer() {
     const col = COLLECTIONS.find(c => c.id === state.col);
     if (!col || !col.videos[state.vidIndex]) return `<div class="card muted">Loading video…</div>`;
@@ -328,6 +397,7 @@ const SUPA_HEADERS = {
                    oncontextmenu="return false" draggable="false"
                    onclick="window.__act('playpause')"></video>
             <div class="vid-loading" id="vidLoading"><span class="spin"></span> Buffering clip…</div>
+            ${watermarkHtml()}
           </div>
           <div class="scrub-row">
             <button class="mini-play" id="miniPlay" title="Play / Pause (Space)"
@@ -335,7 +405,7 @@ const SUPA_HEADERS = {
             <div class="scrub-wrap">
               <input type="range" id="scrub" class="scrub" min="0" max="1000" value="0" step="1"
                      oninput="window.__scrub(this.value)" title="Scrub through the clip">
-              <div class="stamp-tick" id="stampTick" hidden title="Pressure released"></div>
+              <div class="stamp-tick" id="stampTick" hidden title="Pressure released (CRT = 0)"></div>
             </div>
           </div>
         </div>
@@ -348,15 +418,6 @@ const SUPA_HEADERS = {
             </div>
             <button class="mark-btn" id="markBtn" onclick="window.__act('mark')">● Mark colour change <kbd>M</kbd></button>
           </div>
-          <div class="transport">
-            <button class="tbtn" title="Previous frame (← or ,)" onclick="window.__act('stepback')">◀ frame</button>
-            <button class="tbtn play" id="playpause" title="Play / Pause (Space)" onclick="window.__act('playpause')">▶</button>
-            <button class="tbtn" title="Next frame (→ or .)" onclick="window.__act('stepfwd')">frame ▶</button>
-          </div>
-          <div class="speed-row">
-            <span class="speed-lbl">Speed</span>
-            ${[0.25, 0.5, 1].map(r => `<button class="speed-btn ${state.speed === r ? 'active' : ''}" onclick="window.__act('speed','${r}')">${r === 1 ? '1×' : r + '×'}</button>`).join('')}
-          </div>
           <button class="btn nextvid block" id="nextVidBtn"
                   title="Saves your mark, then moves on (N)"
                   onclick="window.__act('submit')">${hasNext ? 'Save &amp; Next clip ›' : 'Save &amp; Finish ›'}</button>
@@ -368,7 +429,6 @@ const SUPA_HEADERS = {
           <div class="shortcuts">
             <span><kbd>Space</kbd> play / pause</span>
             <span><kbd>←</kbd><kbd>→</kbd> step 1 frame</span>
-            <span><kbd>⇧</kbd>+<kbd>←→</kbd> 10 frames</span>
             <span><kbd>M</kbd> mark</span>
             <span><kbd>N</kbd> save &amp; next</span>
           </div>
@@ -397,9 +457,7 @@ const SUPA_HEADERS = {
              <button class="btn ghost small" onclick="window.__act('remark')">↺ Re-mark</button>
            </div>
          </div>`
-      : `<div class="hint">${v.stampFrame != null
-           ? `Frame-step to where the colour returns, then <b>Mark</b>.`
-           : `Frame-step to the colour return, then <b>Mark</b>.`}</div>`;
+      : `<div class="hint">Play the clip, then press <b>Mark</b> the moment the colour returns.</div>`;
     return body
       + (state.msg ? `<div class="ok">${esc(state.msg)}</div>` : '')
       + (state.err ? `<div class="err">${esc(state.err)}</div>` : '');
@@ -529,10 +587,11 @@ const SUPA_HEADERS = {
     };
     vid.addEventListener('loadedmetadata', onMeta);
 
-    // Robust "ready" handling. Controls unlock as soon as the clip can play and
-    // STAY unlocked: a 'waiting' during a frame-step seek used to disable
-    // everything with no event to re-enable it (while paused, 'playing' never
-    // fires), leaving the buffering overlay and buttons stuck.
+    // Robust "ready" handling. The controls unlock as soon as the clip can be
+    // played/seeked, and — crucially — STAY unlocked. A 'waiting' during a
+    // frame-step seek used to disable everything with no event to re-enable it
+    // (while paused, 'playing' never fires), leaving the buffering overlay and
+    // buttons stuck. Now 'waiting' only shows the overlay on the FIRST load.
     let everReady = false;
     setReady(false);
     const markReady = () => {
@@ -543,17 +602,17 @@ const SUPA_HEADERS = {
     vid.addEventListener('canplay', markReady);
     vid.addEventListener('canplaythrough', markReady);
     vid.addEventListener('playing', markReady);
-    vid.addEventListener('waiting', () => { if (!everReady) setReady(false); });
-    // Safety net: never leave the overlay stuck if the browser is stingy with
-    // 'canplaythrough' — once metadata is in, unlock after a short grace period.
-    setTimeout(() => { if (!everReady && vid.readyState >= 1) markReady(); }, 4000);
     vid.addEventListener('seeked', () => { if (everReady) setReady(true); updateClockNow(); });
+    vid.addEventListener('waiting', () => { if (!everReady) setReady(false); });
     vid.addEventListener('play', updateClockNow);
     vid.addEventListener('pause', updateClockNow);
     vid.addEventListener('error', () => {
       const overlay = document.getElementById('vidLoading');
-      if (overlay) overlay.textContent = 'Could not load this clip. Check the file, then reload.';
+      if (overlay) overlay.innerHTML = 'Could not load this clip. Reload the page, or check the file.';
     });
+    // Safety net: never leave the overlay stuck if the browser is stingy with
+    // 'canplaythrough' — once metadata is in, unlock after a short grace period.
+    setTimeout(() => { if (!everReady && vid.readyState >= 1) markReady(); }, 4000);
     if (vid.readyState >= 2) markReady();
     vid.load();
 
@@ -805,16 +864,16 @@ const SUPA_HEADERS = {
     });
   }
 
-  // Auto-hide the sticky header on scroll-down (frees space, esp. on phones);
-  // it slides back the moment you scroll up.
+  // Auto-hide the sticky header on scroll-down (reclaims space, esp. on phones);
+  // it slides back in the moment you scroll up.
   (() => {
     const hdr = document.querySelector('.hdr');
     if (!hdr) return;
     let lastY = 0, ticking = false;
     const apply = () => {
       const y = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
-      if (y > lastY + 5 && y > 70) hdr.classList.add('hdr-hidden');
-      else if (y < lastY - 5 || y <= 4) hdr.classList.remove('hdr-hidden');
+      if (y > lastY + 5 && y > 70) hdr.classList.add('hdr-hidden');      // scrolling down
+      else if (y < lastY - 5 || y <= 4) hdr.classList.remove('hdr-hidden'); // scrolling up / at top
       lastY = y; ticking = false;
     };
     window.addEventListener('scroll', () => {

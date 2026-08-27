@@ -51,3 +51,7 @@ videos/
 *.swp
 *.swo
 *.bak
+
+# Supabase service key / local uploader settings - NEVER commit
+studio_config.json
+.env
