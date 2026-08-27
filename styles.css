@@ -373,9 +373,24 @@ video {
 
 /* ---- Narrow / short screens: single column. Cap the video so the clock +
        Mark button stay visible under it without scrolling. ---- */
+/* ---- Tablet & phone: single column, with the core actions (Mark, frame
+       steps, Save & Next) right under a size-capped video so the whole
+       play → mark → next flow stays on one screen. ---- */
 @media (max-width: 860px) {
-  .player-layout { grid-template-columns: 1fr; }
+  .player-layout { grid-template-columns: 1fr; gap: 12px; }
+  .video-panel { gap: 8px; }
+  .vid-stage { max-height: 46dvh; }
   .vid-stage video { max-height: 46dvh; object-fit: contain; }
+  .control-panel { gap: 11px; }
+  /* Reclaim vertical space: drop the sticky header and shrink the title in the
+     player; the compact breadcrumb is the way back. */
+  body[data-view="player"] .hdr { display: none; }
+  body[data-view="player"] .wrap { padding-top: 10px; }
+  body[data-view="player"] .crumb { margin-bottom: 6px; font-size: 12.5px; }
+  body[data-view="player"] .page-head { margin-bottom: 8px; }
+  body[data-view="player"] .page-head h2 { font-size: 18px; }
+  /* The mini play button on the scrub bar covers playback here. */
+  .transport .tbtn.play { display: none; }
 }
 
 .readout {
@@ -457,8 +472,41 @@ video {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---- Scrub bar ---- */
-.scrub-row { display: flex; }
+/* ---- Scrub bar (with inline play button + release marker) ---- */
+.scrub-row { display: flex; align-items: center; gap: 10px; }
+.scrub-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
+
+/* Small round play/pause at the left of the bar. */
+.mini-play {
+  flex: none;
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: var(--teal);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, transform .05s;
+}
+.mini-play:hover { background: var(--teal-2); }
+.mini-play:active { transform: scale(.94); }
+
+/* Red dot on the bar marking the pressure release. */
+.stamp-tick {
+  position: absolute;
+  top: 50%;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--pulse);
+  border: 2px solid var(--surface);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
+}
+.stamp-tick[hidden] { display: none; }
+
 .scrub {
   width: 100%; height: 26px; margin: 0;
   -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer;
@@ -540,26 +588,29 @@ kbd {
 }
 .mark-btn kbd { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.3); color: #fff; margin-left: 4px; }
 
+/* ---------- Phone ---------- */
 @media (max-width: 520px) {
-  .transport { flex-wrap: wrap; }
-  .transport .tbtn { flex: 1 1 30%; }
-  .transport .tbtn.play { order: -1; flex: 1 1 100%; }
-}
-
-/* ---------- Responsive ---------- */
-@media (max-width: 860px) {
-  .player-layout { grid-template-columns: 1fr; }
-  .control-panel .readout { margin-top: 4px; }
-}
-
-@media (max-width: 520px) {
-  .readout { padding: 15px 16px; }
-  .mark-btn { width: 100%; }
-  .nav-row { flex-direction: column; }
+  .vid-stage, .vid-stage video { max-height: 40dvh; }
+  /* Frame steps stay on ONE row so Mark + Save & Next remain above the fold. */
+  .transport .tbtn { flex: 1; padding: 12px 6px; font-size: 12.5px; }
+  .readout { padding: 12px 14px; gap: 10px; }
+  .clock .val { font-size: 30px; }
+  .mark-btn { width: 100%; min-width: 0; padding: 14px 18px; }
+  .nav-row { gap: 8px; }
   .vid-row .num { width: 34px; height: 34px; }
+  /* Slimmer header elsewhere in the app (it is hidden in the player). */
+  .hdr { padding: 9px 14px; }
+  .hdr .sub { display: none; }
 }
 
-/* Larger tap targets on touch devices */
+/* Touch devices: no keyboard, no hover — drop keyboard hints, bigger targets. */
 @media (hover: none) {
-  .btn, .mark-btn, .icon-btn { min-height: 44px; }
+  .shortcuts { display: none; }
+  .mark-btn kbd { display: none; }
+  .btn, .mark-btn, .icon-btn, .transport .tbtn, .speed-btn { min-height: 46px; }
+  .mini-play { width: 44px; height: 44px; font-size: 16px; }
 }
+
+/* Auto-hiding header (JS toggles .hdr-hidden on scroll-down to free space). */
+.hdr { transition: transform .25s ease; will-change: transform; }
+.hdr.hdr-hidden { transform: translateY(-100%); }
