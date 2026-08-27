@@ -325,13 +325,18 @@ const SUPA_HEADERS = {
           <div class="vid-stage">
             <video id="vid" src="${esc(v.url)}" playsinline preload="auto"
                    disablepictureinpicture controlslist="nodownload noremoteplayback"
-                   oncontextmenu="return false" draggable="false"></video>
+                   oncontextmenu="return false" draggable="false"
+                   onclick="window.__act('playpause')"></video>
             <div class="vid-loading" id="vidLoading"><span class="spin"></span> Buffering clip…</div>
           </div>
           <div class="scrub-row">
-            <input type="range" id="scrub" class="scrub" min="0" max="1000" value="0" step="1"
-                   oninput="window.__scrub(this.value)" title="Scrub through the clip">
-            <div class="stamp-tick" id="stampTick" hidden title="Pressure released (CRT = 0)"></div>
+            <button class="mini-play" id="miniPlay" title="Play / Pause (Space)"
+                    onclick="window.__act('playpause')">▶</button>
+            <div class="scrub-wrap">
+              <input type="range" id="scrub" class="scrub" min="0" max="1000" value="0" step="1"
+                     oninput="window.__scrub(this.value)" title="Scrub through the clip">
+              <div class="stamp-tick" id="stampTick" hidden title="Pressure released (CRT = 0)"></div>
+            </div>
           </div>
         </div>
         <div class="control-panel">
@@ -342,15 +347,6 @@ const SUPA_HEADERS = {
               <span class="frame" id="frame">${v.stampFrame != null ? `release frame ${v.stampFrame}` : `frame 0 · ${fps} fps`}</span>
             </div>
             <button class="mark-btn" id="markBtn" onclick="window.__act('mark')">● Mark colour change <kbd>M</kbd></button>
-          </div>
-          <div class="transport">
-            <button class="tbtn" title="Previous frame (← or ,)" onclick="window.__act('stepback')">◀ frame</button>
-            <button class="tbtn play" id="playpause" title="Play / Pause (Space)" onclick="window.__act('playpause')">▶</button>
-            <button class="tbtn" title="Next frame (→ or .)" onclick="window.__act('stepfwd')">frame ▶</button>
-          </div>
-          <div class="speed-row">
-            <span class="speed-lbl">Speed</span>
-            ${[0.25, 0.5, 1].map(r => `<button class="speed-btn ${state.speed === r ? 'active' : ''}" onclick="window.__act('speed','${r}')">${r === 1 ? '1×' : r + '×'}</button>`).join('')}
           </div>
           <button class="btn nextvid block" id="nextVidBtn"
                   title="Saves your mark, then moves on (N)"
@@ -363,7 +359,6 @@ const SUPA_HEADERS = {
           <div class="shortcuts">
             <span><kbd>Space</kbd> play / pause</span>
             <span><kbd>←</kbd><kbd>→</kbd> step 1 frame</span>
-            <span><kbd>⇧</kbd>+<kbd>←→</kbd> 10 frames</span>
             <span><kbd>M</kbd> mark</span>
             <span><kbd>N</kbd> save &amp; next</span>
           </div>
@@ -392,9 +387,7 @@ const SUPA_HEADERS = {
              <button class="btn ghost small" onclick="window.__act('remark')">↺ Re-mark</button>
            </div>
          </div>`
-      : `<div class="hint">${v.stampFrame != null
-           ? `Frame-step to where the colour returns, then <b>Mark</b>.`
-           : `Frame-step to the colour return, then <b>Mark</b>.`}</div>`;
+      : `<div class="hint">Play the clip, then press <b>Mark</b> the moment the colour returns.</div>`;
     return body
       + (state.msg ? `<div class="ok">${esc(state.msg)}</div>` : '')
       + (state.err ? `<div class="err">${esc(state.err)}</div>` : '');
@@ -448,7 +441,10 @@ const SUPA_HEADERS = {
       if (c) c.textContent = fmt(t);
       if (f) f.textContent = `frame ${frameOf(t, fps)} · ${fps} fps`;
     }
-    if (pp) pp.textContent = vid.paused ? '▶' : '⏸';
+    const icon = vid.paused ? '▶' : '⏸';
+    if (pp) pp.textContent = icon;
+    const mp = document.getElementById('miniPlay');
+    if (mp) mp.textContent = icon;
     if (sc && !scrubbing && isFinite(vid.duration) && vid.duration > 0) {
       sc.value = String(Math.round((t / vid.duration) * 1000));
     }
@@ -500,9 +496,8 @@ const SUPA_HEADERS = {
     const applySpeed = () => { vid.playbackRate = state.speed || 1; };
     applySpeed();
     const v0 = currentVideo();
-    // Start stamped clips at the release moment, and mark it on the scrub bar,
-    // once we know the duration.
-    let jumped = false;
+    // Clips always start at the BEGINNING (so the press itself is visible);
+    // the release is shown as a red dot on the scrub bar instead.
     const onMeta = () => {
       applySpeed();
       // Size the video box to the clip's real aspect ratio (no wasted width).
@@ -518,11 +513,7 @@ const SUPA_HEADERS = {
         v0.releaseFileTime = v0.stampFrame / v0.fps;
       }
       positionStampTick(vid, v0);
-      if (!jumped && v0 && v0.releaseFileTime != null && isFinite(vid.duration)) {
-        jumped = true;
-        vid.currentTime = Math.min(v0.releaseFileTime, vid.duration);
-        updateClockNow();
-      }
+      updateClockNow();
     };
     vid.addEventListener('loadedmetadata', onMeta);
 

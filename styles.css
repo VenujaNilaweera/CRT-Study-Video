@@ -375,16 +375,74 @@ video {
        steps, Save & Next) sitting right under a size-capped video so the flow
        stays on one screen. ---- */
 @media (max-width: 860px) {
-  .player-layout { grid-template-columns: 1fr; gap: 12px; }
-  .video-panel { gap: 8px; }
-  .vid-stage { max-height: 50dvh; }
-  .vid-stage video { max-height: 50dvh; object-fit: contain; }
-  .control-panel { gap: 11px; }
-  /* Reclaim the vertical space the breadcrumb + big title were eating. */
+  .player-layout { grid-template-columns: 1fr; }
+
+  /* The player becomes a full-height flex column that never scrolls. The VIDEO
+     is the flexible element: it takes whatever height is left after the
+     controls, so the whole play → mark → next flow fits on ANY phone —
+     small or large, portrait or landscape — with no per-device tuning. */
+  /* Cap the flex column at the viewport; .wrap is flex:1 inside body, so
+     without this the body simply grows to fit its content. */
+  body[data-view="player"] { height: 100dvh; overflow: hidden; }
+  body[data-view="player"] .wrap {
+    height: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-top: 10px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  body[data-view="player"] .player-layout {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  body[data-view="player"] .video-panel {
+    flex: 1 1 auto;
+    min-height: 20dvh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+  }
+  /* The stage fills the leftover space; the video keeps its own shape inside it.
+     Both backgrounds are transparent so the area around a clip whose aspect
+     ratio differs blends into the page instead of showing black bars. */
+  body[data-view="player"] .vid-stage {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    background: transparent;
+  }
+  body[data-view="player"] .vid-stage video {
+    width: 100%; height: 100%;
+    max-height: none;
+    object-fit: contain;
+    background: transparent;
+  }
+  /* Controls keep their natural height; if a marked result makes them taller
+     than the space left, they scroll internally instead of pushing the video
+     or the Save button off-screen. */
+  body[data-view="player"] .control-panel {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 9px;
+  }
+
+  /* Reclaim vertical space: the sticky header and breadcrumb go away inside
+     the player ("‹ Back" in the nav row is the way out). */
+  body[data-view="player"] .hdr { display: none; }
   body[data-view="player"] .crumb { display: none; }
-  body[data-view="player"] .page-head { margin-bottom: 8px; }
-  body[data-view="player"] .page-head h2 { font-size: 19px; }
+  body[data-view="player"] .page-head { margin-bottom: 8px; gap: 8px; }
+  body[data-view="player"] .page-head h2 { font-size: 17px; }
   body[data-view="player"] .control-panel .nav-row { margin-top: 0; }
+  /* The round play button on the scrub bar covers playback here. */
+  .transport .tbtn.play { display: none; }
 }
 
 .readout {
@@ -466,8 +524,40 @@ video {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---- Scrub bar ---- */
-.scrub-row { display: flex; }
+/* ---- Scrub bar (inline play button + release marker) ---- */
+.scrub-row { display: flex; align-items: center; gap: 10px; }
+.scrub-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
+
+/* Small round play/pause at the left of the bar. */
+.mini-play {
+  flex: none;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: var(--teal);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, transform .05s;
+}
+.mini-play:hover { background: var(--teal-2); }
+.mini-play:active { transform: scale(.94); }
+
+/* Red dot on the bar marking the pressure release (CRT = 0). */
+.stamp-tick {
+  position: absolute;
+  top: 50%;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--pulse);
+  border: 2px solid var(--surface);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
+}
+.stamp-tick[hidden] { display: none; }
 .scrub {
   width: 100%; height: 26px; margin: 0;
   -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer;
@@ -558,15 +648,33 @@ kbd {
 
 /* ---------- Phone ---------- */
 @media (max-width: 520px) {
-  .vid-stage, .vid-stage video { max-height: 42dvh; }
-  .readout { padding: 12px 14px; gap: 12px; }
+  .vid-stage, .vid-stage video { max-height: 40dvh; }
+  /* Stack the clock above a FULL-WIDTH Mark button. Side by side, the button
+     was squeezed to ~120px and its label wrapped onto three lines. */
+  .readout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 14px;
+  }
   .clock .val { font-size: 30px; }
-  .mark-btn { width: 100%; min-width: 0; }
+  .clock .frame { font-size: 11px; }
+  .mark-btn { width: 100%; min-width: 0; padding: 15px 18px; white-space: nowrap; }
+  /* Slim speed row so it costs one short line, not a full button row. */
+  .speed-row { gap: 6px; }
+  .speed-lbl { font-size: 10px; }
+  .speed-btn { padding: 7px 4px; font-size: 12px; }
+  /* Compact result card — it appears under the controls after marking. */
+  .marked { padding: 10px 12px; }
+  .marked .mt { font-size: 19px; }
+  .marked .tip { display: none; }
   .nav-row { gap: 8px; }
   .vid-row .num { width: 34px; height: 34px; }
-  /* Slimmer header on phones; drop the tagline to save the row height. */
-  .hdr { padding: 9px 14px; }
+  /* Slimmer header on the list screens; it is hidden inside the player. */
+  .hdr { padding: 9px 12px; gap: 8px; }
   .hdr .sub { display: none; }
+  .hdr h1 { font-size: 15px; }
+  .hdr button { padding: 7px 10px; font-size: 12px; }
 }
 
 /* Touch devices: no keyboard and no hover — drop keyboard hints and give every
@@ -575,6 +683,7 @@ kbd {
   .shortcuts { display: none; }
   .mark-btn kbd { display: none; }
   .btn, .mark-btn, .icon-btn, .transport .tbtn, .speed-btn { min-height: 46px; }
+  .mini-play { width: 46px; height: 46px; font-size: 16px; }
 }
 
 /* Auto-hiding header (JS toggles .hdr-hidden on scroll-down to free space). */
