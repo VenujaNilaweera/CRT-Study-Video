@@ -250,6 +250,13 @@ const SUPA_HEADERS = {
     }
   }
 
+  // Wrap each word so the quote can fade in word by word. The delay is set
+  // per word inline; CSS alone can't stagger an arbitrary number of children.
+  function words(text) {
+    return text.split(' ').map((w, i) =>
+      `<span class="w" style="--wd:${(i * 55 + 320)}ms">${esc(w)}</span>`).join(' ');
+  }
+
   function viewLogin() {
     // The intro animation plays once per browser, not on every re-render
     // (a failed validation re-renders this view and replaying it would nag).
@@ -279,26 +286,26 @@ const SUPA_HEADERS = {
       <aside class="about-panel">
         <figure class="about-quote">
           <span class="qm open" aria-hidden="true">&ldquo;</span>
-          <blockquote>Two clinicians watch the same refill and read two different times. This study measures that gap.</blockquote>
+          <blockquote>${words('Two clinicians watch the same refill and read two different times.')}</blockquote>
           <span class="qm close" aria-hidden="true">&rdquo;</span>
         </figure>
 
         <div class="about-body">
           <span class="about-eyebrow">About this research</span>
           <h3>Clinical phase detection in capillary refill</h3>
-          <p>Capillary refill time is a frontline bedside sign of peripheral perfusion, yet it is judged by eye — and trained clinicians often disagree on where the refill actually ends. This study collects those judgements from medical professionals so that variation can be measured against frame-accurate recordings.</p>
+          <p>Capillary refill is judged by eye — and trained clinicians disagree on where it ends. Your marks measure that variation against frame-accurate recordings.</p>
 
           <ol class="about-steps">
-            <li><span class="n">1</span><div><b>Watch</b> a short pump-recorded clip.</div></li>
-            <li><span class="n">2</span><div><b>Mark</b> the moment the colour returns.</div></li>
-            <li><span class="n">3</span><div><b>Save</b> and move to the next clip.</div></li>
+            <li><span class="n">1</span><div><b>Watch</b> a short clip</div></li>
+            <li><span class="n">2</span><div><b>Mark</b> when the colour returns</div></li>
+            <li><span class="n">3</span><div><b>Save</b> and move on</div></li>
           </ol>
 
           <div class="about-note">
-            <b>Your privacy.</b> Please do <b>not</b> enter your full name. Initials or a few letters are all we need — they exist only to keep one person's responses together during analysis. No patient-identifying information is collected, and results are reported in aggregate.
+            <b>No full names.</b> Initials are enough — they only group your own responses. No patient data is collected.
           </div>
 
-          <p class="about-foot">Takes about 5 minutes · Your marks save automatically</p>
+          <p class="about-foot">About 5 minutes · Saves automatically</p>
         </div>
       </aside>
     </div>`;
