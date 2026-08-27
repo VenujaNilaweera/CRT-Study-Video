@@ -58,6 +58,7 @@ except ImportError:                                    # flash overlay is option
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "studio_config.json"              # git-ignored (holds the service key)
+LEDGER_NAME = "uploaded_videos.txt"                    # plain-text record, lives in the working folder
 
 DEFAULT_SRC = r"D:\project\Reserch\resorces\pump_recordings"
 DEFAULT_WORK = r"D:\project\Reserch\resorces\editedvideos"
@@ -255,6 +256,64 @@ def write_flashed(src: Path, dest: Path, stamped_frame: int) -> None:
 
 
 # ===========================================================================
+#  Ledger - the plain-text record of what has already been published
+# ===========================================================================
+#  Drop new recordings into the source folder whenever you like: anything
+#  already listed here is skipped outright, so it is never re-encoded and
+#  never uploaded a second time. Delete a line to force that clip through
+#  again (handy if an upload was replaced or a clip was re-recorded).
+LEDGER_HEADER = (
+    "# CRT Study Studio - clips already processed and published.\n"
+    "# Delete a line to force that clip to be re-encoded and re-uploaded.\n"
+    "# name\tframes\tcollection\tnumber\tuploaded_at\n"
+)
+
+
+def ledger_file(work_dir: str | Path) -> Path:
+    return Path(work_dir) / LEDGER_NAME
+
+
+def load_ledger(work_dir: str | Path) -> dict[str, str]:
+    """Map of clip filename -> the full record line (comments ignored)."""
+    path = ledger_file(work_dir)
+    if not path.exists():
+        return {}
+    out: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        out[line.split("\t")[0].strip()] = line
+    return out
+
+
+def append_ledger(work_dir: str | Path, name: str, frames: int,
+                  collection: str, number: int) -> None:
+    from datetime import datetime
+    path = ledger_file(work_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text(LEDGER_HEADER, encoding="utf-8")
+    stamp = datetime.now().isoformat(timespec="seconds")
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(f"{name}\t{frames}\t{collection}\t{number}\t{stamp}\n")
+
+
+def encoded_is_reusable(out_path: Path, expected_frames: int | None) -> bool:
+    """
+    True when a previously encoded file is already sitting in the working
+    folder and still has the frame count we expect, so re-encoding it would
+    just burn minutes for an identical result.
+    """
+    if not out_path.exists() or out_path.stat().st_size == 0:
+        return False
+    frames, duration = probe(out_path)
+    if not frames or not duration:
+        return False
+    return expected_frames is None or frames == expected_frames
+
+
+# ===========================================================================
 #  Supabase
 # ===========================================================================
 class Supabase:
@@ -369,9 +428,23 @@ class Pipeline(threading.Thread):
         work = Path(self.s.work_dir)
         work.mkdir(parents=True, exist_ok=True)
 
-        existing = sb.existing_paths() if self.s.skip_existing else set()
+        # Two independent records of "already done": the local ledger and the
+        # live database. Either one is enough to skip a clip, so a wiped
+        # ledger or a fresh machine still cannot create duplicates.
+        ledger = load_ledger(work)
+        existing: set[str] = set()
+        if self.s.skip_existing:
+            existing |= set(ledger)
+            try:
+                existing |= sb.existing_paths()
+            except Exception as exc:
+                self.log(f"Could not read the site's clip list ({exc}); "
+                         f"using the local ledger only.", "warn")
+        if ledger:
+            self.log(f"Ledger lists {len(ledger)} clip(s) already published "
+                     f"({ledger_file(work).name}).")
         if existing:
-            self.log(f"{len(existing)} clip(s) already on the site - those are skipped.")
+            self.log(f"{len(existing)} clip(s) already done - those are skipped.")
 
         # Continue collection numbering after whatever is already live.
         cols = sb.collections()
@@ -433,8 +506,12 @@ class Pipeline(threading.Thread):
             try:
                 out = work / clip.video.name
 
+                # Re-use an encode from a previous run instead of spending
+                # minutes producing a byte-for-byte equivalent file.
                 self.set_status(clip, "encoding")
-                if self.s.add_flash and clip.stamped_frame is not None:
+                if encoded_is_reusable(out, clip.frame_count):
+                    self.log(f"  {clip.name}: reusing the existing encode")
+                elif self.s.add_flash and clip.stamped_frame is not None:
                     write_flashed(clip.video, out, clip.stamped_frame)
                 else:
                     encode_web(clip.video, out)
@@ -478,6 +555,10 @@ class Pipeline(threading.Thread):
                     "trigger_source": clip.trigger_source,
                     "post_stamp_tail_s": clip.post_stamp_tail_s,
                 })
+
+                # Record it only once the row is safely in the database, so a
+                # failure part-way through never marks a clip as published.
+                append_ledger(work, clip.video.name, frames, cur_id, number)
 
                 clip.collection_id, clip.video_number = cur_id, number
                 self.set_status(clip, "done", f"{cur_id} #{number}")
@@ -692,6 +773,15 @@ class App(tk.Tk):
             if video.exists():
                 self.clips.append(Clip.load(video, stamp))
 
+        # Mark what the ledger already knows about, so the table shows at a
+        # glance which clips are new before anything is run.
+        ledger = load_ledger(self.work_var.get())
+        for clip in self.clips:
+            if clip.status == "waiting" and clip.name in ledger:
+                parts = ledger[clip.name].split("\t")
+                where = f"{parts[2]} #{parts[3]}" if len(parts) > 3 else "already published"
+                clip.status, clip.note = "skipped", where
+
         for clip in self.clips:
             self.tree.insert("", "end", iid=clip.name, tags=(clip.status,), values=(
                 clip.name,
@@ -700,8 +790,9 @@ class App(tk.Tk):
                 clip.status, clip.note,
             ))
         n = len(self.clips)
-        self.badge.configure(text=f"{n} clip{'s' if n != 1 else ''} found")
-        self.write_log(f"Found {n} clip(s) with stamp data in {folder}")
+        new = sum(1 for c in self.clips if c.status == "waiting")
+        self.badge.configure(text=f"{n} clip{'s' if n != 1 else ''}  ·  {new} new")
+        self.write_log(f"Found {n} clip(s) in {folder} - {new} not yet published.")
 
     def gather(self) -> Settings:
         s = self.settings
