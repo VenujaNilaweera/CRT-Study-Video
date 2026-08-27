@@ -525,21 +525,34 @@ const SUPA_HEADERS = {
       }
     };
     vid.addEventListener('loadedmetadata', onMeta);
+
+    // Robust "ready" handling. The controls unlock as soon as the clip can be
+    // played/seeked, and — crucially — STAY unlocked. A 'waiting' during a
+    // frame-step seek used to disable everything with no event to re-enable it
+    // (while paused, 'playing' never fires), leaving the buffering overlay and
+    // buttons stuck. Now 'waiting' only shows the overlay on the FIRST load.
+    let everReady = false;
     setReady(false);
-    const ready = () => { setReady(true); applySpeed(); };
-    // canplaythrough = enough buffered to finish without stalling.
-    vid.addEventListener('canplaythrough', ready);
-    vid.addEventListener('loadeddata', () => { if (vid.readyState >= 3) ready(); });
-    vid.addEventListener('waiting', () => setReady(false));
-    vid.addEventListener('playing', ready);
-    vid.addEventListener('seeked', updateClockNow);
+    const markReady = () => {
+      if (!everReady) { everReady = true; applySpeed(); }
+      setReady(true);
+    };
+    vid.addEventListener('loadeddata', () => { if (vid.readyState >= 2) markReady(); });
+    vid.addEventListener('canplay', markReady);
+    vid.addEventListener('canplaythrough', markReady);
+    vid.addEventListener('playing', markReady);
+    vid.addEventListener('seeked', () => { if (everReady) setReady(true); updateClockNow(); });
+    vid.addEventListener('waiting', () => { if (!everReady) setReady(false); });
     vid.addEventListener('play', updateClockNow);
     vid.addEventListener('pause', updateClockNow);
     vid.addEventListener('error', () => {
       const overlay = document.getElementById('vidLoading');
-      if (overlay) overlay.textContent = 'Could not load this clip. Check the file, then reload.';
+      if (overlay) overlay.innerHTML = 'Could not load this clip. Reload the page, or check the file.';
     });
-    if (vid.readyState >= 3) ready();
+    // Safety net: never leave the overlay stuck if the browser is stingy with
+    // 'canplaythrough' — once metadata is in, unlock after a short grace period.
+    setTimeout(() => { if (!everReady && vid.readyState >= 1) markReady(); }, 4000);
+    if (vid.readyState >= 2) markReady();
     vid.load();
 
     // Fallback frame-rate detection from rendered frames — ONLY for clips with
@@ -789,6 +802,23 @@ const SUPA_HEADERS = {
       if (!document.documentElement.getAttribute('data-theme')) render();
     });
   }
+
+  // Auto-hide the sticky header on scroll-down (reclaims space, esp. on phones);
+  // it slides back in the moment you scroll up.
+  (() => {
+    const hdr = document.querySelector('.hdr');
+    if (!hdr) return;
+    let lastY = 0, ticking = false;
+    const apply = () => {
+      const y = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
+      if (y > lastY + 5 && y > 70) hdr.classList.add('hdr-hidden');      // scrolling down
+      else if (y < lastY - 5 || y <= 4) hdr.classList.remove('hdr-hidden'); // scrolling up / at top
+      lastY = y; ticking = false;
+    };
+    window.addEventListener('scroll', () => {
+      if (!ticking) { requestAnimationFrame(apply); ticking = true; }
+    }, { passive: true });
+  })();
 
   /* ---------- load videos + collections from Supabase ---------- */
   /* The `videos` table already holds every stamp field that used to live in a

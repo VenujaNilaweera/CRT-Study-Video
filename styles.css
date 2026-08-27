@@ -371,11 +371,20 @@ video {
   body[data-view="player"] .control-panel .nav-row { margin-top: auto; }
 }
 
-/* ---- Narrow / short screens: single column. Cap the video so the clock +
-       Mark button stay visible under it without scrolling. ---- */
+/* ---- Tablet & phone: single column, with the core actions (Mark, frame
+       steps, Save & Next) sitting right under a size-capped video so the flow
+       stays on one screen. ---- */
 @media (max-width: 860px) {
-  .player-layout { grid-template-columns: 1fr; }
-  .vid-stage video { max-height: 46dvh; object-fit: contain; }
+  .player-layout { grid-template-columns: 1fr; gap: 12px; }
+  .video-panel { gap: 8px; }
+  .vid-stage { max-height: 50dvh; }
+  .vid-stage video { max-height: 50dvh; object-fit: contain; }
+  .control-panel { gap: 11px; }
+  /* Reclaim the vertical space the breadcrumb + big title were eating. */
+  body[data-view="player"] .crumb { display: none; }
+  body[data-view="player"] .page-head { margin-bottom: 8px; }
+  body[data-view="player"] .page-head h2 { font-size: 19px; }
+  body[data-view="player"] .control-panel .nav-row { margin-top: 0; }
 }
 
 .readout {
@@ -540,26 +549,34 @@ kbd {
 }
 .mark-btn kbd { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.3); color: #fff; margin-left: 4px; }
 
+/* Keep the transport on ONE row even on phones (◀ frame · play · frame ▶) so
+   the Mark + Save & Next stay above the fold. */
 @media (max-width: 520px) {
-  .transport { flex-wrap: wrap; }
-  .transport .tbtn { flex: 1 1 30%; }
-  .transport .tbtn.play { order: -1; flex: 1 1 100%; }
+  .transport .tbtn { padding: 12px 6px; font-size: 12px; }
+  .transport .tbtn.play { min-width: 54px; }
 }
 
-/* ---------- Responsive ---------- */
-@media (max-width: 860px) {
-  .player-layout { grid-template-columns: 1fr; }
-  .control-panel .readout { margin-top: 4px; }
-}
-
+/* ---------- Phone ---------- */
 @media (max-width: 520px) {
-  .readout { padding: 15px 16px; }
-  .mark-btn { width: 100%; }
-  .nav-row { flex-direction: column; }
+  .vid-stage, .vid-stage video { max-height: 42dvh; }
+  .readout { padding: 12px 14px; gap: 12px; }
+  .clock .val { font-size: 30px; }
+  .mark-btn { width: 100%; min-width: 0; }
+  .nav-row { gap: 8px; }
   .vid-row .num { width: 34px; height: 34px; }
+  /* Slimmer header on phones; drop the tagline to save the row height. */
+  .hdr { padding: 9px 14px; }
+  .hdr .sub { display: none; }
 }
 
-/* Larger tap targets on touch devices */
+/* Touch devices: no keyboard and no hover — drop keyboard hints and give every
+   control a comfortable tap target. */
 @media (hover: none) {
-  .btn, .mark-btn, .icon-btn { min-height: 44px; }
+  .shortcuts { display: none; }
+  .mark-btn kbd { display: none; }
+  .btn, .mark-btn, .icon-btn, .transport .tbtn, .speed-btn { min-height: 46px; }
 }
+
+/* Auto-hiding header (JS toggles .hdr-hidden on scroll-down to free space). */
+.hdr { transition: transform .25s ease; will-change: transform; }
+.hdr.hdr-hidden { transform: translateY(-100%); }
