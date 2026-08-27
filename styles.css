@@ -748,26 +748,37 @@ video {
    Sits in the corners only: the centre of the frame carries the clinical
    signal being judged and must never be tinted or covered. pointer-events
    none so it can't block the tap-to-play. */
+/* Pinned by JS to the RENDERED picture (see fitWatermark) rather than the
+   whole stage, so it sits on the footage and survives a crop of just the
+   video. Styled like a burned-in camera caption: dark type with a faint light
+   halo, which stays readable over both the pale nail bed and the dark
+   surround without the bright-white look of an interface label. */
 .wmark {
-  position: absolute; inset: 0;
+  position: absolute;
   pointer-events: none;
   z-index: 3;
   overflow: hidden;
-  border-radius: var(--radius);
 }
 .wmark .wm {
   position: absolute;
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: .4px;
+  font-size: 10px;
+  letter-spacing: .3px;
   white-space: nowrap;
-  color: rgba(255,255,255,.34);
-  text-shadow: 0 1px 2px rgba(0,0,0,.55);
+  color: rgba(0,0,0,.5);
+  text-shadow:
+     0 1px 0 rgba(255,255,255,.28),
+     0 0 3px rgba(255,255,255,.22);
   user-select: none;
+  mix-blend-mode: multiply;
 }
-.wmark .wm.tl { top: 8px; left: 10px; }
-.wmark .wm.br { bottom: 8px; right: 10px; }
-@media (max-width: 520px) { .wmark .wm { font-size: 9px; } }
+.wmark .wm.tl { top: 7px; left: 9px; }
+.wmark .wm.br { bottom: 7px; right: 9px; }
+@media (max-width: 520px) {
+  .wmark .wm { font-size: 8.5px; }
+  .wmark .wm.tl { top: 5px; left: 6px; }
+  .wmark .wm.br { bottom: 5px; right: 6px; }
+}
 
 /* ---- Scrub bar (inline play button + release marker) ---- */
 .scrub-row { display: flex; align-items: center; gap: 10px; }
