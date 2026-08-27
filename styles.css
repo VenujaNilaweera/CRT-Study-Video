@@ -382,6 +382,16 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   .about-quote .caret { opacity: 0; }
 }
 
+/* ---------- Icons ----------
+   Inline SVG that inherits currentColor, so one icon works in both themes.
+   vertical-align keeps it optically centred next to text without flexbox. */
+.ic { display: inline-block; vertical-align: -0.18em; flex: none; }
+.icon-btn .ic, .hdr button .ic { vertical-align: -0.2em; }
+.icon-btn.square { display: inline-flex; align-items: center; justify-content: center; }
+.btn .ic, .mark-btn .ic { vertical-align: -0.16em; }
+.mark-btn .ic { margin-right: 2px; }
+.tile .thumb .ic { color: var(--teal); }
+
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-flex;
