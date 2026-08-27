@@ -92,6 +92,7 @@ const SUPA_HEADERS = {
   const app = document.getElementById('app');
   const hdrActions = document.getElementById('hdrActions');
   let state = { view: 'login', user: null, col: null, vidIndex: 0, marked: null, saving: false, msg: '', err: '', speed: 1 };
+  let prevView = null;            // drives the login typing replay
   restoreSession();               // survive page reloads (e.g. live-reload servers, accidental refresh)
   let annotations = loadAnnotations();
 
@@ -243,18 +244,50 @@ const SUPA_HEADERS = {
 
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
 
-    // Once the login intro has played, remember it so later visits go straight
-    // to a settled page instead of replaying the animation.
-    if (state.view === 'login' && app.querySelector('.login-layout.intro')) {
+    // Replay the typing when the viewer ARRIVES at the login screen (initial
+    // load or after logging out), not on a validation re-render.
+    if (state.view === 'login') {
+      typeQuote(prevView !== 'login');
       try { localStorage.setItem(INTRO_KEY, '1'); } catch {}
     }
+    prevView = state.view;
   }
 
-  // Wrap each word so the quote can fade in word by word. The delay is set
-  // per word inline; CSS alone can't stagger an arbitrary number of children.
-  function words(text) {
-    return text.split(' ').map((w, i) =>
-      `<span class="w" style="--wd:${(i * 55 + 320)}ms">${esc(w)}</span>`).join(' ');
+  // The quote types itself out on the first paint of each page load. Typing
+  // is done in JS rather than a CSS steps() animation because the line wraps:
+  // a width-based reveal would clip mid-word at narrow widths.
+  const QUOTE = 'Two clinicians watch the same refill and read two different times.';
+  // Replays every time the login screen is ENTERED - first load, and again
+  // after a logout - but not on the re-render a failed validation causes,
+  // which would restart the text mid-read.
+  let typingRun = 0;
+
+  function typeQuote(replay) {
+    const el = document.getElementById('typed');
+    if (!el) return;
+    const reduce = window.matchMedia &&
+                   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!replay || reduce) {       // just a re-render, or the viewer opted out
+      el.textContent = QUOTE;
+      el.closest('.about-quote')?.classList.add('done');
+      return;
+    }
+    const run = ++typingRun;       // a newer run cancels this one
+    el.textContent = '';
+    let i = 0;
+    const tick = () => {
+      if (run !== typingRun) return;                   // superseded by a newer run
+      if (!document.getElementById('typed')) return;   // view changed mid-type
+      el.textContent = QUOTE.slice(0, ++i);
+      if (i < QUOTE.length) {
+        // Slight pause after punctuation reads more like a person typing.
+        const c = QUOTE[i - 1];
+        setTimeout(tick, c === ',' ? 190 : c === '.' ? 260 : 26 + Math.random() * 34);
+      } else {
+        el.closest('.about-quote')?.classList.add('done');
+      }
+    };
+    setTimeout(tick, 420);
   }
 
   function viewLogin() {
@@ -286,7 +319,7 @@ const SUPA_HEADERS = {
       <aside class="about-panel">
         <figure class="about-quote">
           <span class="qm open" aria-hidden="true">&ldquo;</span>
-          <blockquote>${words('Two clinicians watch the same refill and read two different times.')}</blockquote>
+          <blockquote><span id="typed"></span><span class="caret" aria-hidden="true"></span></blockquote>
           <span class="qm close" aria-hidden="true">&rdquo;</span>
         </figure>
 
