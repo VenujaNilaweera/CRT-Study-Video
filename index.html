@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=8">
+<link rel="stylesheet" href="styles.css?v=9">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -109,7 +109,6 @@ const SUPA_HEADERS = {
   // The frame CONTAINING time t is floor(t*fps) — never round(), which would
   // report the next frame once t sits past a frame's midpoint.
   const frameOf = (t, fps) => Math.floor(t * (Number(fps) || 30) + 1e-6);
-  const csvCell = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
   /* ---------- persistence ---------- */
   function loadAnnotations() {
@@ -195,26 +194,6 @@ const SUPA_HEADERS = {
     render();
   }
 
-  /* ---------- CSV export ---------- */
-  function exportCsv() {
-    const header = ['name', 'status', 'age', 'collection', 'videoIndex', 'videoTitle',
-      'timeSeconds', 'crtSeconds', 'rawTimeSeconds', 'stampTimeSeconds', 'fps', 'frameIndex', 'stampFrame', 'submittedAt'];
-    const rows = [header.join(',')];
-    for (const row of annotations) {
-      rows.push([
-        csvCell(row.name), csvCell(row.status), csvCell(row.age), csvCell(row.collection),
-        csvCell(row.videoIndex), csvCell(row.videoTitle), csvCell(row.timeSeconds),
-        csvCell(row.crtSeconds), csvCell(row.rawTimeSeconds), csvCell(row.stampTimeSeconds),
-        csvCell(row.fps), csvCell(row.frameIndex), csvCell(row.stampFrame), csvCell(row.submittedAt),
-      ].join(','));
-    }
-    const blob = new Blob([rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'crt-study-annotations.csv'; a.click();
-    URL.revokeObjectURL(url);
-  }
-
   // Write one annotation row into the Supabase `annotations` table.
   // Keeps the same function name so the rest of the app (queue, retry,
   // offline resilience) is untouched.
@@ -260,7 +239,6 @@ const SUPA_HEADERS = {
       actions += `<span class="who">${esc(state.user.name)} · ${esc(state.user.status)}</span>`;
       const pending = annotations.filter(a => a.synced === false).length;
       if (pending) actions += `<button class="sync-warn" title="${pending} mark(s) not yet saved — click to retry" onclick="window.__act('retrysync')">${icon('retry', 15)} ${pending} unsaved</button>`;
-      if (annotations.length) actions += `<button onclick="window.__act('export')">${icon('down', 15)} Export log</button>`;
       actions += `<button onclick="window.__act('logout')">${icon('logout', 15)} Log out</button>`;
     }
     hdrActions.innerHTML = actions;
@@ -418,18 +396,39 @@ const SUPA_HEADERS = {
   /* ---------- per-viewer watermark ----------
      Traceability, not prevention: nothing in a browser can stop a screenshot
      or a screen recording, but a leaked capture carries the account it came
-     from. Placed in the CORNERS at low opacity on purpose — this is a colour
-     perception study, so the nail bed in the middle of the frame must stay
-     completely unobstructed or the watermark would bias the measurement. */
+     from. Sits INSIDE the picture, styled like a burned-in camera caption, so
+     a crop of just the video still carries it. Kept to the corners at low
+     opacity on purpose — this is a colour perception study, so the nail bed in
+     the middle of the frame must stay completely unobstructed. */
   function watermarkHtml() {
     if (!state.user) return '';
     const who = `${state.user.name} · ${state.user.status}`;
     const when = new Date().toISOString().slice(0, 10);
     const tag = esc(`${who} · ${when}`);
-    return `<div class="wmark" aria-hidden="true">
+    return `<div class="wmark" id="wmark" aria-hidden="true">
       <span class="wm tl">${tag}</span>
       <span class="wm br">${tag}</span>
     </div>`;
+  }
+
+  /* The video is object-fit:contain, so the picture rarely fills its box —
+     there are empty margins either side. Left alone the watermark would float
+     in that empty area instead of on the footage (and would be cropped off
+     entirely in a screenshot of just the video). This measures the rendered
+     picture and pins the overlay to exactly that rectangle. */
+  function fitWatermark() {
+    const vid = document.getElementById('vid');
+    const wm = document.getElementById('wmark');
+    if (!vid || !wm) return;
+    const W = vid.clientWidth, H = vid.clientHeight;
+    const vw = vid.videoWidth, vh = vid.videoHeight;
+    if (!W || !H || !vw || !vh) return;
+    const scale = Math.min(W / vw, H / vh);      // object-fit: contain
+    const w = vw * scale, h = vh * scale;
+    wm.style.left = ((W - w) / 2) + 'px';
+    wm.style.top = ((H - h) / 2) + 'px';
+    wm.style.width = w + 'px';
+    wm.style.height = h + 'px';
   }
 
   function viewPlayer() {
@@ -646,6 +645,7 @@ const SUPA_HEADERS = {
         v0.releaseFileTime = v0.stampFrame / v0.fps;
       }
       positionStampTick(vid, v0);
+      fitWatermark();          // needs videoWidth/videoHeight, so not before now
       updateClockNow();
     };
     vid.addEventListener('loadedmetadata', onMeta);
@@ -677,6 +677,16 @@ const SUPA_HEADERS = {
     // 'canplaythrough' — once metadata is in, unlock after a short grace period.
     setTimeout(() => { if (!everReady && vid.readyState >= 1) markReady(); }, 4000);
     if (vid.readyState >= 2) markReady();
+
+    // Keep the overlay glued to the picture as the layout changes. A
+    // ResizeObserver catches rail reflow and phone rotation, which a window
+    // resize listener alone would miss.
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(() => fitWatermark());
+      ro.observe(vid);
+    }
+    window.addEventListener('resize', fitWatermark);
+
     vid.load();
 
     // Fallback frame-rate detection from rendered frames — ONLY for clips with
@@ -788,7 +798,6 @@ const SUPA_HEADERS = {
     state.msg = ''; state.err = '';
 
     if (act === 'theme') return toggleTheme();
-    if (act === 'export') return exportCsv();
 
     if (act === 'login') {
       const name = document.getElementById('f-name').value.trim();
