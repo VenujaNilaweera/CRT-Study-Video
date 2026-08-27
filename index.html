@@ -352,6 +352,23 @@ const SUPA_HEADERS = {
       ${items || '<div class="card muted">No videos in this collection.</div>'}`;
   }
 
+  /* ---------- per-viewer watermark ----------
+     Traceability, not prevention: nothing in a browser can stop a screenshot
+     or a screen recording, but a leaked capture carries the account it came
+     from. Placed in the CORNERS at low opacity on purpose — this is a colour
+     perception study, so the nail bed in the middle of the frame must stay
+     completely unobstructed or the watermark would bias the measurement. */
+  function watermarkHtml() {
+    if (!state.user) return '';
+    const who = `${state.user.name} · ${state.user.status}`;
+    const when = new Date().toISOString().slice(0, 10);
+    const tag = esc(`${who} · ${when}`);
+    return `<div class="wmark" aria-hidden="true">
+      <span class="wm tl">${tag}</span>
+      <span class="wm br">${tag}</span>
+    </div>`;
+  }
+
   function viewPlayer() {
     const col = COLLECTIONS.find(c => c.id === state.col);
     if (!col || !col.videos[state.vidIndex]) return `<div class="card muted">Loading video…</div>`;
@@ -380,6 +397,7 @@ const SUPA_HEADERS = {
                    oncontextmenu="return false" draggable="false"
                    onclick="window.__act('playpause')"></video>
             <div class="vid-loading" id="vidLoading"><span class="spin"></span> Buffering clip…</div>
+            ${watermarkHtml()}
           </div>
           <div class="scrub-row">
             <button class="mini-play" id="miniPlay" title="Play / Pause (Space)"

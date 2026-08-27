@@ -673,6 +673,31 @@ video {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---- Per-viewer watermark ----
+   Sits in the corners only: the centre of the frame carries the clinical
+   signal being judged and must never be tinted or covered. pointer-events
+   none so it can't block the tap-to-play. */
+.wmark {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  overflow: hidden;
+  border-radius: var(--radius);
+}
+.wmark .wm {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .4px;
+  white-space: nowrap;
+  color: rgba(255,255,255,.34);
+  text-shadow: 0 1px 2px rgba(0,0,0,.55);
+  user-select: none;
+}
+.wmark .wm.tl { top: 8px; left: 10px; }
+.wmark .wm.br { bottom: 8px; right: 10px; }
+@media (max-width: 520px) { .wmark .wm { font-size: 9px; } }
+
 /* ---- Scrub bar (inline play button + release marker) ---- */
 .scrub-row { display: flex; align-items: center; gap: 10px; }
 .scrub-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
