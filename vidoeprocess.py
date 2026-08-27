@@ -100,13 +100,23 @@ def save_frames(frames: list, out_path: Path, fps: float) -> None:
 
 
 def transcode_for_web(src_path: Path, out_path: Path) -> None:
-    """Re-encodes src_path to H.264/yuv420p with +faststart, writing to out_path."""
+    """
+    Re-encodes src_path to H.264/yuv420p with +faststart, writing to out_path.
+
+    All-intra (-g 1 -keyint_min 1 -sc_threshold 0) puts a keyframe on every
+    frame. Without it libx264 emits only a couple of keyframes for a short
+    clip: seeking stays accurate, but stepping BACKWARD makes the browser
+    re-decode from the previous keyframe, which is visibly laggy on a phone.
+    These clips are seconds long, so the extra size is a fine trade - and it
+    keeps this script's output identical to what studio.py uploads.
+    """
     tmp_path = out_path.with_name(out_path.stem + ".tmp.mp4")
     subprocess.run(
         [
             "ffmpeg", "-y", "-loglevel", "error",
             "-i", str(src_path),
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "20",
+            "-g", "1", "-keyint_min", "1", "-sc_threshold", "0",
             "-movflags", "+faststart",
             "-an",
             str(tmp_path),
@@ -117,9 +127,17 @@ def transcode_for_web(src_path: Path, out_path: Path) -> None:
 
 
 def is_web_ready(video_path: Path) -> bool:
-    """Checks (via ffprobe) whether video_path is already H.264 - skip re-encoding if so."""
+    """
+    Checks whether video_path is already H.264 AND all-intra - skip re-encoding
+    if so.
+
+    Checking the codec alone is not enough: files written by older versions of
+    this script are H.264 but carry only a couple of keyframes, so they would
+    be skipped forever and keep the laggy backward-stepping. Requiring every
+    frame to be a keyframe makes those get rebuilt once.
+    """
     try:
-        result = subprocess.run(
+        codec = subprocess.run(
             [
                 "ffprobe", "-v", "error", "-select_streams", "v:0",
                 "-show_entries", "stream=codec_name",
@@ -127,10 +145,24 @@ def is_web_ready(video_path: Path) -> bool:
                 str(video_path),
             ],
             capture_output=True, text=True, check=True,
-        )
+        ).stdout.strip()
+        if codec != "h264":
+            return False
+        frames = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "frame=key_frame",
+                "-of", "csv=p=0",
+                str(video_path),
+            ],
+            capture_output=True, text=True, check=True,
+        ).stdout.split()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
-    return result.stdout.strip() == "h264"
+    # csv=p=0 can emit a trailing comma on a line (e.g. "1,"), so take the
+    # first comma-separated field rather than comparing the raw token.
+    flags = [f.split(",")[0].strip() for f in frames if f.strip()]
+    return bool(flags) and all(f == "1" for f in flags)
 
 
 COPY_SUFFIX_RE = re.compile(r"^(?P<base>.+) \(\d+\)(?P<ext>\.[^.]+)$")

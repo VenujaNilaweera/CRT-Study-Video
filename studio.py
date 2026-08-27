@@ -299,18 +299,41 @@ def append_ledger(work_dir: str | Path, name: str, frames: int,
         fh.write(f"{name}\t{frames}\t{collection}\t{number}\t{stamp}\n")
 
 
+def is_all_intra(path: Path) -> bool:
+    """
+    True when every frame is a keyframe.
+
+    ffprobe's csv=p=0 output can carry a trailing comma on a line (e.g. "1,"),
+    so take the first comma-separated field rather than comparing the raw line.
+    """
+    res = _run([
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "frame=key_frame", "-of", "csv=p=0", str(path),
+    ])
+    flags = [ln.split(",")[0].strip()
+             for ln in res.stdout.splitlines() if ln.strip()]
+    return bool(flags) and all(f == "1" for f in flags)
+
+
 def encoded_is_reusable(out_path: Path, expected_frames: int | None) -> bool:
     """
-    True when a previously encoded file is already sitting in the working
-    folder and still has the frame count we expect, so re-encoding it would
-    just burn minutes for an identical result.
+    True when a previously encoded file can be uploaded as-is.
+
+    A matching frame count is NOT enough. vidoeprocess.py writes into the same
+    working folder without the all-intra flags, so a file with the right frame
+    count can still carry only a couple of keyframes. Uploading that would make
+    backward frame stepping decode from the start of the clip every time, which
+    on a phone is the difference between instant and visibly laggy. Anything
+    that is not all-intra is re-encoded.
     """
     if not out_path.exists() or out_path.stat().st_size == 0:
         return False
     frames, duration = probe(out_path)
     if not frames or not duration:
         return False
-    return expected_frames is None or frames == expected_frames
+    if expected_frames is not None and frames != expected_frames:
+        return False
+    return is_all_intra(out_path)
 
 
 # ===========================================================================
