@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=9">
+<link rel="stylesheet" href="styles.css?v=10">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -68,6 +68,7 @@ const STORAGE_KEY = 'crt-study-annotations';
 const SESSION_KEY = 'crt-study-session';
 const THEME_KEY = 'crt-theme';
 const INTRO_KEY = 'crt-intro-seen';   // login intro animation plays once per browser
+const ONBOARD_KEY = 'crt-onboarding-seen';   // first-run walkthrough plays once per browser
 
 /* =========================================================================
    SUPABASE BACKEND
@@ -95,7 +96,7 @@ const SUPA_HEADERS = {
 (() => {
   const app = document.getElementById('app');
   const hdrActions = document.getElementById('hdrActions');
-  let state = { view: 'login', user: null, col: null, vidIndex: 0, marked: null, saving: false, msg: '', err: '', speed: 1 };
+  let state = { view: 'login', user: null, col: null, vidIndex: 0, marked: null, saving: false, msg: '', err: '', speed: 1, onboardPage: 0 };
   let prevView = null;            // drives the login typing replay
   restoreSession();               // survive page reloads (e.g. live-reload servers, accidental refresh)
   let annotations = loadAnnotations();
@@ -125,7 +126,9 @@ const SUPA_HEADERS = {
       if (!state.user) { localStorage.removeItem(SESSION_KEY); return; }
       localStorage.setItem(SESSION_KEY, JSON.stringify({
         user: state.user,
-        view: state.view === 'login' ? 'collections' : state.view,
+        // A reload always lands on a settled screen — replaying mid-onboarding
+        // from a stored page index isn't worth the extra persisted state.
+        view: (state.view === 'login' || state.view === 'onboarding') ? 'collections' : state.view,
         col: state.col,
         vidIndex: state.vidIndex
       }));
@@ -194,6 +197,15 @@ const SUPA_HEADERS = {
     render();
   }
 
+  // Skip, or reaching the last page's Start button, both end onboarding the
+  // same way: gate it shut for this browser and drop into Collections.
+  function finishOnboarding() {
+    try { localStorage.setItem(ONBOARD_KEY, '1'); } catch {}
+    state.view = 'collections';
+    state.onboardPage = 0;
+    return render();
+  }
+
   // Write one annotation row into the Supabase `annotations` table.
   // Keeps the same function name so the rest of the app (queue, retry,
   // offline resilience) is untouched.
@@ -245,6 +257,7 @@ const SUPA_HEADERS = {
 
     let html = '';
     if (state.view === 'login') html = viewLogin();
+    else if (state.view === 'onboarding') html = viewOnboarding();
     else if (state.view === 'collections') html = viewCollections();
     else if (state.view === 'videos') html = viewVideos();
     else if (state.view === 'player') html = viewPlayer();
@@ -349,6 +362,86 @@ const SUPA_HEADERS = {
           <p class="about-foot">About 5 minutes · Saves automatically</p>
         </div>
       </aside>
+    </div>`;
+  }
+
+  /* =========================================================================
+     FIRST-RUN ONBOARDING
+     A 3-page "Next / Next / Start" walkthrough shown once per browser, right
+     after the first successful login (ONBOARD_KEY gates it, same convention
+     as INTRO_KEY for the login typing animation). Skippable at any point;
+     a returning viewer never sees it again once ONBOARD_KEY is set.
+     ========================================================================= */
+  const ONBOARD_PAGES = [
+    {
+      eyebrow: 'Step 1 of 3 · Watch',
+      title: 'What you’re watching',
+      body: 'Each clip shows a fingertip pressing on the nail bed, then lifting. The instant the finger lifts is the release — that’s when timing starts. Watch for the moment the skin’s colour flows back in.',
+      illo: 'press'
+    },
+    {
+      eyebrow: 'Step 2 of 3 · Respond',
+      title: 'How to respond',
+      body: 'The moment you see colour return, press <b>Mark colour change</b>. Your mark is captured instantly — then press <b>Save &amp; Next</b> to record it and move on to the next clip.',
+      illo: 'mark'
+    },
+    {
+      eyebrow: 'Step 3 of 3 · Begin',
+      title: 'Getting started',
+      body: 'Pick a collection from the menu, then choose any video inside it to start watching. Your progress is saved as you go, so you can always pick up right where you left off.',
+      illo: 'pick'
+    }
+  ];
+
+  // Small looping illustrations built from plain shapes (no video asset) —
+  // each one dramatizes the step's copy rather than just decorating it.
+  function onboardIllo(kind) {
+    if (kind === 'press') {
+      return `<div class="ob-scene ob-scene-press">
+        <div class="ob-nail"><div class="ob-flash"></div></div>
+        <div class="ob-finger"></div>
+        <span class="ob-tag">release &rarr; colour returns</span>
+      </div>`;
+    }
+    if (kind === 'mark') {
+      return `<div class="ob-scene ob-scene-mark">
+        <div class="ob-mini-player">
+          <div class="ob-mini-mark">${icon('dot', 11)} Mark<span class="ob-ripple"></span></div>
+          <div class="ob-mini-result">0.86s marked</div>
+          <div class="ob-mini-save">Save &amp; Next ${icon('fwd', 12)}</div>
+        </div>
+      </div>`;
+    }
+    return `<div class="ob-scene ob-scene-pick">
+      <div class="ob-mini-tile">${icon('folder', 15)}<span>Collection 01</span></div>
+      <div class="ob-mini-row"><span class="ob-mini-play">&#9654;</span>Video 01</div>
+    </div>`;
+  }
+
+  function viewOnboarding() {
+    const page = Math.max(0, Math.min(ONBOARD_PAGES.length - 1, state.onboardPage || 0));
+    const p = ONBOARD_PAGES[page];
+    const isLast = page === ONBOARD_PAGES.length - 1;
+    const dots = ONBOARD_PAGES.map((_, i) =>
+      `<button class="ob-dot ${i === page ? 'active' : ''}" aria-label="Go to step ${i + 1}"
+         aria-current="${i === page ? 'true' : 'false'}" onclick="window.__act('onboardgoto',${i})"></button>`
+    ).join('');
+
+    return `<div class="onboard-layout">
+      <div class="card onboard-card">
+        <div class="ob-top">
+          <span class="ob-eyebrow">${p.eyebrow}</span>
+          <button class="ob-skip" onclick="window.__act('onboardskip')">Skip</button>
+        </div>
+        <div class="ob-illo-wrap">${onboardIllo(p.illo)}</div>
+        <h2 class="ob-title">${p.title}</h2>
+        <p class="ob-body">${p.body}</p>
+        <div class="ob-dots">${dots}</div>
+        <div class="ob-nav">
+          <button class="btn neutral" onclick="window.__act('onboardback')" ${page === 0 ? 'disabled' : ''}>${icon('back', 16)} Back</button>
+          <button class="btn ob-primary" onclick="window.__act('${isLast ? 'onboardfinish' : 'onboardnext'}')">${isLast ? 'Start' : 'Next'} ${icon(isLast ? 'check' : 'fwd', 16)}</button>
+        </div>
+      </div>
     </div>`;
   }
 
@@ -785,6 +878,24 @@ const SUPA_HEADERS = {
   }
   document.addEventListener('keydown', onPlayerKey, true);
 
+  /* Keyboard (onboarding only): →/N = next, ←/P = back, Esc = skip. */
+  function onOnboardKey(e) {
+    if (state.view !== 'onboarding') return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      window.__act((state.onboardPage || 0) >= ONBOARD_PAGES.length - 1 ? 'onboardfinish' : 'onboardnext');
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      window.__act('onboardback');
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      window.__act('onboardskip');
+    }
+  }
+  document.addEventListener('keydown', onOnboardKey, true);
+
   function openVideo(index) {
     state.vidIndex = index;
     state.marked = null;
@@ -805,9 +916,16 @@ const SUPA_HEADERS = {
       const age = document.getElementById('f-age').value;
       if (!name || !status) { state.err = 'Name and status are required.'; return render(); }
       state.user = { name, status, age };
-      state.view = 'collections';
+      let onboarded = false;
+      try { onboarded = localStorage.getItem(ONBOARD_KEY) === '1'; } catch {}
+      if (onboarded) { state.view = 'collections'; }
+      else { state.view = 'onboarding'; state.onboardPage = 0; }
       return render();
     }
+    if (act === 'onboardnext') { state.onboardPage = Math.min(ONBOARD_PAGES.length - 1, (state.onboardPage || 0) + 1); return render(); }
+    if (act === 'onboardback') { state.onboardPage = Math.max(0, (state.onboardPage || 0) - 1); return render(); }
+    if (act === 'onboardgoto') { state.onboardPage = Math.max(0, Math.min(ONBOARD_PAGES.length - 1, Number(id) || 0)); return render(); }
+    if (act === 'onboardskip' || act === 'onboardfinish') { return finishOnboarding(); }
     if (act === 'logout') {
       state.user = null; state.view = 'login'; state.col = null; state.vidIndex = 0; state.marked = null;
       try { localStorage.removeItem(SESSION_KEY); } catch {}
