@@ -731,6 +731,20 @@ video {
   display: block;
 }
 
+/* The player title row carries a "Menu" back button so there is always a way
+   out of a clip — on phones the header and breadcrumb are hidden here, and
+   without this the only exit was the browser's Back button (which leaves the
+   site entirely). It returns to the current collection's video list; from
+   there the "Collections" breadcrumb reaches the full menu. */
+.player-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.player-title h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.player-back { flex: none; padding: 9px 14px; font-size: 13.5px; }
+
 .player-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(300px, 26vw, 420px);

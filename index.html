@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=10">
+<link rel="stylesheet" href="styles.css?v=11">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -279,7 +279,42 @@ const SUPA_HEADERS = {
       try { localStorage.setItem(INTRO_KEY, '1'); } catch {}
     }
     prevView = state.view;
+    primeBackTrap();
   }
+
+  /* ---------- browser / phone Back button ----------
+     This is a single page with no URL routes, so the device Back button would
+     otherwise leave the site entirely from any screen — on a phone, where the
+     header and breadcrumb are hidden in the player, that felt like the app
+     just quit. Keep one extra history entry parked ahead of the app; when Back
+     consumes it, step UP one level (player → video list → collections) and
+     re-arm, so Back only leaves the site from the collections menu itself. */
+  let backTrapPrimed = false;
+  function primeBackTrap() {
+    if (backTrapPrimed) return;
+    // Only start trapping once the viewer is actually inside the app.
+    if (!state.user || state.view === 'login') return;
+    try { history.pushState({ crtTrap: 1 }, ''); backTrapPrimed = true; } catch {}
+  }
+  window.addEventListener('popstate', () => {
+    if (!backTrapPrimed) return;               // trap not armed yet — let it be
+    if (state.view === 'player') {
+      // Up to the current collection's video list.
+      state.view = 'videos'; state.marked = null; state.msg = ''; state.err = '';
+      stopClock(); render();
+      try { history.pushState({ crtTrap: 1 }, ''); } catch {}
+    } else if (state.view === 'videos') {
+      // Up to the collections menu.
+      state.view = 'collections'; state.col = null;
+      render();
+      try { history.pushState({ crtTrap: 1 }, ''); } catch {}
+    } else if (state.view === 'onboarding') {
+      // Don't let Back drop out of the walkthrough into a blank history slot.
+      render();
+      try { history.pushState({ crtTrap: 1 }, ''); } catch {}
+    }
+    // collections / login: allow the Back to proceed (the site may navigate away).
+  });
 
   // The quote types itself out on the first paint of each page load. Typing
   // is done in JS rather than a CSS steps() animation because the line wraps:
@@ -548,7 +583,11 @@ const SUPA_HEADERS = {
         <span>${esc(v.title)}</span>
       </div>
       <div class="page-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-        <h2>${esc(v.title)}</h2>
+        <div class="player-title">
+          <button class="btn neutral player-back" title="Back to the video list"
+                  onclick="window.__act('opencol','${col.id}')">${icon('back', 16)} Menu</button>
+          <h2>${esc(v.title)}</h2>
+        </div>
         <span class="progress-pill">Video ${current} of ${total}${done ? ' · ✓ annotated' : ''}</span>
       </div>
       <div class="player-layout">
