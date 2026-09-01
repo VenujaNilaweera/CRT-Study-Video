@@ -144,6 +144,13 @@ const SUPA_HEADERS = {
         state.vidIndex = Number.isInteger(s.vidIndex) ? s.vidIndex : 0;
         // marked/saving/messages always start clean after a reload.
         state.marked = null; state.saving = false; state.msg = ''; state.err = '';
+        // A returning viewer whose session is restored skips the login screen,
+        // so the first-login onboarding check never runs for them. Show the
+        // walkthrough here too if they've never seen it — it's gated by the
+        // same ONBOARD_KEY, so it still plays exactly once per browser.
+        let onboarded = false;
+        try { onboarded = localStorage.getItem(ONBOARD_KEY) === '1'; } catch {}
+        if (!onboarded) { state.view = 'onboarding'; state.onboardPage = 0; }
       }
     } catch {}
   }
