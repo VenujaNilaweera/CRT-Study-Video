@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=14">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -581,9 +581,9 @@ const SUPA_HEADERS = {
      The green frame is not a graphic either: it is the same 3-frame, 50%-green
      release flash studio.py burns into every clip it encodes. */
   const OB_SHOT = {
-    press:   { src: 'assets/crt-press.jpg',   alt: 'A fingertip held under pressure against the nail bed' },
-    release: { src: 'assets/crt-release.jpg', alt: 'The same fingertip at the moment of release, the frame tinted green' },
-    refill:  { src: 'assets/crt-refill.jpg',  alt: 'The nail bed a moment later, with its colour returned' }
+    press:   { src: 'assets/crt-press.jpg?v=14',   alt: 'A glass piece pressing down on the nail bed, arrows showing the pressure' },
+    release: { src: 'assets/crt-release.jpg?v=14', alt: 'The moment of release, the frame flashing green' },
+    refill:  { src: 'assets/crt-refill.jpg?v=14',  alt: 'The nail bed a moment later, its colour returned' }
   };
   const shot = (k, cap) => `<figure class="ob-shot">
       <img src="${OB_SHOT[k].src}" alt="${OB_SHOT[k].alt}" width="384" height="384"
@@ -615,9 +615,9 @@ const SUPA_HEADERS = {
     const dots = Array.from({ length: SET_SIZE },
       (_, i) => `<span style="animation-delay:${(i * 0.26).toFixed(2)}s"></span>`).join('');
     const strip = [1, 2, 3].map(n =>
-      `<img src="assets/crt-thumb${n}.jpg" alt="" width="192" height="192" loading="lazy" decoding="async">`
+      `<img src="assets/crt-thumb${n}.jpg?v=14" alt="" width="192" height="192" loading="lazy" decoding="async">`
     ).join('') + `<span class="ob-strip-more" aria-hidden="true">&hellip;</span>`
-      + `<img src="assets/crt-thumb4.jpg" alt="" width="192" height="192" loading="lazy" decoding="async">`;
+      + `<img src="assets/crt-thumb4.jpg?v=14" alt="" width="192" height="192" loading="lazy" decoding="async">`;
     return `<div class="ob-scene ob-scene-pick">
       <div class="ob-set-pill">${icon('dot', 10)} one set &middot; ${SET_SIZE} clips</div>
       <div class="ob-set-dots">${dots}</div>

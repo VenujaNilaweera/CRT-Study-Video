@@ -198,7 +198,7 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
    ========================================================================== */
 .login-layout {
   display: grid;
-  grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 26px;
   align-items: start;
   max-width: 1000px;
@@ -390,13 +390,13 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
 .about-steps li:nth-child(3) .n { animation-delay: 1s; }
 
 /* Phones: About sits BELOW the sign-in form. */
-/* Roomy desktops: give the reading column more of the extra width. */
+/* Roomy desktops: same two equal columns, just a little more breathing room. */
 @media (min-width: 1180px) {
-  .login-layout { grid-template-columns: 430px minmax(0, 1fr); gap: 34px; }
+  .login-layout { gap: 34px; }
 }
 /* Tablets in portrait: stack, but keep the panel comfortably wide. */
 @media (max-width: 980px) and (min-width: 861px) {
-  .login-layout { grid-template-columns: 380px minmax(0, 1fr); gap: 20px; }
+  .login-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
 }
 @media (max-width: 860px) {
   .login-layout { grid-template-columns: 1fr; gap: 16px; margin-top: 4px; max-width: 560px; }
@@ -460,7 +460,7 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
 .ob-skip:hover { color: var(--ink); background: var(--surface-2); }
 
 .ob-illo-wrap {
-  background: var(--surface-2);
+  background: #04121a;   /* the illustrations' own backdrop */
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   margin-bottom: 18px;
@@ -488,9 +488,11 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
 .ob-nav .btn.neutral { flex: 0 0 auto; }
 .ob-primary { flex: 1; }
 
-/* ---- Shared: a single photograph from a study recording ----
-   The walkthrough is illustrated with real frames rather than drawings, so
-   what it promises and what the player shows are the same picture. */
+/* ---- Shared: one illustration tile ----
+   The walkthrough uses the study team's own illustrations of the test. Each
+   one is supplied on a dark tile (rgb 4,18,26); --ob-tile matches it so the
+   three read as a single set and sit flush on the card in light or dark. */
+.ob-scene { --ob-tile: #04121a; }
 .ob-shot {
   margin: 0;
   flex: 1 1 0;
@@ -511,7 +513,7 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   object-fit: cover;
   border-radius: 9px;
   border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--ob-tile);
 }
 .ob-shot figcaption {
   font-family: var(--mono);
@@ -634,6 +636,7 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   object-fit: cover;
   border-radius: 5px;
   display: block;
+  background: var(--ob-tile);
 }
 .ob-strip-more {
   flex: none;
