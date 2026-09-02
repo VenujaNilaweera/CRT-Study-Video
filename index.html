@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0E2A2F">
-<title>CRT Perception Study</title>
+<title>Capillary Refill Time (CRT) Visual Assessment Study</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -28,8 +28,8 @@
   <div class="brand">
     <div class="dot"></div>
     <div>
-      <h1>CRT Perception Study</h1>
-      <div class="sub">capillary refill · color-change timing</div>
+      <h1>Capillary Refill Time (CRT) Study</h1>
+      <div class="sub">visual assessment · colour-change timing</div>
     </div>
   </div>
   <div class="actions" id="hdrActions"></div>
@@ -99,6 +99,7 @@ const SUPA_HEADERS = {
   let state = {
     view: 'login', user: null, marked: null, saving: false, msg: '', err: '', speed: 1,
     onboardPage: 0,
+    libraryError: '',    // why the clip library is empty, if it is
     orderSeed: null,     // seeds the tie-break shuffle in the serving queue
     queue: [],           // this participant's clips, in the order they'll see them
     qIndex: 0,           // how far along that queue they are
@@ -281,6 +282,12 @@ const SUPA_HEADERS = {
   }
 
   const currentClip = () => (state.queue && state.queue[state.qIndex]) || null;
+  /* Where to go when there is no clip to show. "All done" is only honest if
+     the library actually loaded and this person has worked through it; if the
+     library itself is empty or unreachable, that is a fault to report, not a
+     finish line to congratulate someone on. */
+  const noClipView = () => (POOL.length ? 'finished' : 'nolibrary');
+  const nextView = () => (currentClip() ? 'player' : noClipView());
   // How far through the current run of SET_SIZE they are.
   const setDone = () => state.qIndex % SET_SIZE;
   const setNumber = () => Math.floor(state.qIndex / SET_SIZE) + 1;
@@ -331,7 +338,7 @@ const SUPA_HEADERS = {
     markOnboarded(state.user && state.user.name);
     state.onboardPage = 0;
     // Straight into the first clip — there is nothing to choose.
-    state.view = state.queueReady ? (currentClip() ? 'player' : 'finished') : 'loading';
+    state.view = state.queueReady ? nextView() : 'loading';
     return render();
   }
 
@@ -390,6 +397,7 @@ const SUPA_HEADERS = {
     else if (state.view === 'loading') html = viewLoading();
     else if (state.view === 'setdone') html = viewSetDone();
     else if (state.view === 'finished') html = viewFinished();
+    else if (state.view === 'nolibrary') html = viewLibraryUnavailable();
     else if (state.view === 'paused') html = viewPaused();
     else if (state.view === 'player') html = viewPlayer();
     app.innerHTML = html;
@@ -482,10 +490,22 @@ const SUPA_HEADERS = {
     const anim = seen ? '' : ' intro';
 
     return `<div class="login-layout${anim}">
+      <!-- Reading order is fixed: the study is NAMED first, then explained in
+           two lines, and only then are any details asked for. The hero spans
+           both columns so that order holds on a wide screen too, where the
+           form and the panel sit side by side. -->
+      <header class="study-hero">
+        <span class="hero-eyebrow">Research study</span>
+        <h2 class="hero-title">Capillary Refill Time (CRT) Visual Assessment Study</h2>
+        <p class="hero-lede">This study investigates how people judge capillary refill by eye. You will
+        watch short clips of a nail bed being pressed and released, and mark the moment you see the
+        colour return — your marks measure how much that judgement varies from one observer to the next.</p>
+      </header>
+
       <div class="card login-card">
         <div class="page-head">
-          <h2>Join the study</h2>
-          <p class="muted">Watch short capillary-refill clips and press one button the moment you see the skin colour return.</p>
+          <h2>Participant information</h2>
+          <p class="muted">Three quick details, then you can start. No patient data is collected.</p>
         </div>
         <div class="field">
           <label for="f-name">Name or initials</label>
@@ -507,16 +527,22 @@ const SUPA_HEADERS = {
           <span class="qm close" aria-hidden="true">&rdquo;</span>
         </figure>
 
+        <!-- The study itself is introduced in the hero above, so this panel
+             carries only what a participant still needs to know before they
+             agree to take part: what it costs them, and what is recorded. -->
         <div class="about-body">
-          <span class="about-eyebrow">About this research</span>
-          <h3>Clinical phase detection in capillary refill</h3>
-          <p>Capillary refill is judged by eye — and trained clinicians disagree on where it ends. Your marks measure that variation against frame-accurate recordings.</p>
+          <span class="about-eyebrow">At a glance</span>
+          <ul class="about-steps">
+            <li><span class="n">1</span><div><b>${SET_SIZE} clips</b> per set, a few seconds each</div></li>
+            <li><span class="n">2</span><div><b>About 5 minutes</b> — stop after any set</div></li>
+            <li><span class="n">3</span><div><b>One button</b> to press, nothing to choose</div></li>
+          </ul>
 
           <div class="about-note">
             <b>No full names.</b> Initials are enough — they only group your own responses. No patient data is collected.
           </div>
 
-          <p class="about-foot">About 5 minutes · Saves automatically</p>
+          <p class="about-foot">Saves automatically · Works on a phone</p>
         </div>
       </aside>
     </div>`;
@@ -533,48 +559,69 @@ const SUPA_HEADERS = {
     {
       eyebrow: 'Step 1 of 3 · Watch',
       title: 'What you’re watching',
-      body: 'Each clip shows a fingertip pressing on the nail bed, then lifting. The instant the finger lifts is the release — that’s when timing starts. Watch for the moment the skin’s colour flows back in.',
+      body: 'Pressure is held on the nail bed, then released. The screen flashes <b>green</b> for a moment at the release — that is when timing starts.',
       illo: 'press'
     },
     {
       eyebrow: 'Step 2 of 3 · Respond',
-      title: 'How to respond',
-      body: 'The moment you see colour return, press <b>Mark colour change</b>. Your mark is captured instantly — then press <b>Save &amp; Next</b> to record it and move on to the next clip.',
+      title: 'What to do',
+      body: 'The instant the colour returns, press <b>Mark colour change</b>. Then press <b>Save &amp; Next</b>.',
       illo: 'mark'
     },
     {
       eyebrow: 'Step 3 of 3 · Begin',
       title: 'Your clips come to you',
-      body: `There's nothing to choose — clips arrive one after another, in <b>sets of ${SET_SIZE}</b>. After each set you can carry on or stop. You'll never be shown the same clip twice, and everything is saved as you go.`,
+      body: `Clips arrive one after another in sets of <b>${SET_SIZE}</b> — nothing to choose, nothing repeated, everything saved as you go.`,
       illo: 'pick'
     }
   ];
 
-  // Small looping illustrations built from plain shapes (no video asset) —
-  // each one dramatizes the step's copy rather than just decorating it.
+  /* Each step is illustrated with real frames of a study recording rather than
+     a drawing, so the walkthrough shows exactly what the clip will look like.
+     The green frame is not a graphic either: it is the same 3-frame, 50%-green
+     release flash studio.py burns into every clip it encodes. */
+  const OB_SHOT = {
+    press:   { src: 'assets/crt-press.jpg',   alt: 'A fingertip held under pressure against the nail bed' },
+    release: { src: 'assets/crt-release.jpg', alt: 'The same fingertip at the moment of release, the frame tinted green' },
+    refill:  { src: 'assets/crt-refill.jpg',  alt: 'The nail bed a moment later, with its colour returned' }
+  };
+  const shot = (k, cap) => `<figure class="ob-shot">
+      <img src="${OB_SHOT[k].src}" alt="${OB_SHOT[k].alt}" width="384" height="384"
+           loading="eager" decoding="async">
+      <figcaption>${cap}</figcaption>
+    </figure>`;
+  const obArrow = `<span class="ob-arrow" aria-hidden="true">${icon('fwd', 15)}</span>`;
+
   function onboardIllo(kind) {
     if (kind === 'press') {
+      // The whole test in one line: pressure, the release flash, the refill.
       return `<div class="ob-scene ob-scene-press">
-        <div class="ob-nail"><div class="ob-flash"></div></div>
-        <div class="ob-finger"></div>
-        <span class="ob-tag">release &rarr; colour returns</span>
+        ${shot('press', 'Pressure held')}${obArrow}
+        ${shot('release', 'Released — green flash')}${obArrow}
+        ${shot('refill', 'Colour returns')}
       </div>`;
     }
     if (kind === 'mark') {
+      // Only the half that needs a response: the flash, then the moment to press.
       return `<div class="ob-scene ob-scene-mark">
-        <div class="ob-mini-player">
+        ${shot('release', 'Green flash')}${obArrow}${shot('refill', 'Mark here')}
+        <div class="ob-mark-side">
           <div class="ob-mini-mark">${icon('dot', 11)} Mark<span class="ob-ripple"></span></div>
           <div class="ob-mini-result">0.86s marked</div>
-          <div class="ob-mini-save">Save &amp; Next ${icon('fwd', 12)}</div>
         </div>
       </div>`;
     }
-    // A run of SET_SIZE clips filling up one by one.
+    // A strip of clips waiting, with the run of SET_SIZE filling up one by one.
     const dots = Array.from({ length: SET_SIZE },
       (_, i) => `<span style="animation-delay:${(i * 0.26).toFixed(2)}s"></span>`).join('');
+    const strip = [1, 2, 3].map(n =>
+      `<img src="assets/crt-thumb${n}.jpg" alt="" width="192" height="192" loading="lazy" decoding="async">`
+    ).join('') + `<span class="ob-strip-more" aria-hidden="true">&hellip;</span>`
+      + `<img src="assets/crt-thumb4.jpg" alt="" width="192" height="192" loading="lazy" decoding="async">`;
     return `<div class="ob-scene ob-scene-pick">
       <div class="ob-set-pill">${icon('dot', 10)} one set &middot; ${SET_SIZE} clips</div>
       <div class="ob-set-dots">${dots}</div>
+      <div class="ob-strip">${strip}</div>
     </div>`;
   }
 
@@ -624,6 +671,19 @@ const SUPA_HEADERS = {
       <p class="muted small-note">${left} clip${left === 1 ? '' : 's'} still waiting, whenever you have time.</p>
       <button class="btn nextvid block" onclick="window.__act('nextset')">Continue with the next ${Math.min(SET_SIZE, left)} ${icon('fwd', 16)}</button>
       <button class="btn neutral block" onclick="window.__act('logout')">Finish for now</button>
+    </div>`;
+  }
+
+  /* An empty library is NOT a finished run. Both used to land on "All done",
+     which told a participant they had marked every clip when in fact nothing
+     had loaded — and gave them no way to try again. */
+  function viewLibraryUnavailable() {
+    return `<div class="card centred-card run-done">
+      <h2>The clips aren’t loading</h2>
+      <p class="muted">${esc(state.libraryError || 'No clips are available right now.')}</p>
+      <p class="muted small-note">Nothing you have already marked is lost — it is saved and will be sent as soon as the connection is back.</p>
+      <button class="btn nextvid block" onclick="window.__act('retrylibrary')">${icon('retry', 16)} Try again</button>
+      <button class="btn neutral block" onclick="window.__act('logout')">Sign out</button>
     </div>`;
   }
 
@@ -1082,7 +1142,7 @@ const SUPA_HEADERS = {
       render();
       await prepareQueue();
       // Don't yank someone out of the walkthrough just because the queue landed.
-      if (state.view === 'loading') state.view = currentClip() ? 'player' : 'finished';
+      if (state.view === 'loading') state.view = nextView();
       return render();
     }
     if (act === 'onboardnext') { state.onboardPage = Math.min(ONBOARD_PAGES.length - 1, (state.onboardPage || 0) + 1); return render(); }
@@ -1097,8 +1157,16 @@ const SUPA_HEADERS = {
       return render();
     }
     if (act === 'pause')   { stopClock(); state.view = 'paused'; return render(); }
-    if (act === 'resume')  { state.view = currentClip() ? 'player' : 'finished'; return render(); }
-    if (act === 'nextset') { state.view = currentClip() ? 'player' : 'finished'; return render(); }
+    if (act === 'retrylibrary') {
+      state.view = 'loading'; state.libraryError = ''; state.queueReady = false;
+      render();
+      discovery = discoverAll();
+      await prepareQueue();
+      state.view = nextView();
+      return render();
+    }
+    if (act === 'resume')  { state.view = nextView(); return render(); }
+    if (act === 'nextset') { state.view = nextView(); return render(); }
     if (act === 'restart') {
       const vid = document.getElementById('vid');
       if (vid) { vid.currentTime = 0; vid.play().catch(() => {}); }
@@ -1236,6 +1304,7 @@ const SUPA_HEADERS = {
      Each .mp4 is served from the public Storage bucket by its storage_path. */
   async function discoverAll() {
     let cols = [], vids = [];
+    state.libraryError = '';
     try {
       const [colRes, vidRes] = await Promise.all([
         fetch(`${REST_URL}/collections?select=*&order=sort_order`, { headers: SUPA_HEADERS, cache: 'no-store' }),
@@ -1243,12 +1312,29 @@ const SUPA_HEADERS = {
       ]);
       if (colRes.ok) cols = await colRes.json();
       if (vidRes.ok) vids = await vidRes.json();
-    } catch { /* network down — fall through to fallback below */ }
+      // A refused read is the usual cause of an empty library (a tightened RLS
+      // policy, a rotated key). Say so — silently showing no clips reads to a
+      // participant as "the videos aren't loading", with nothing to act on.
+      else state.libraryError = `The clip list could not be read (error ${vidRes.status}).`;
+    } catch {
+      state.libraryError = 'Could not reach the clip library. Check your connection.';
+    }
+
+    // Clips whose collection row is missing (or unreadable) would otherwise be
+    // dropped without trace, emptying the library while both requests "worked".
+    if (vids.length && !cols.length) {
+      cols = [{ id: '__all', name: 'CRT clips', icon: '📁', sort_order: 0 }];
+      vids = vids.map(v => ({ ...v, collection_id: '__all' }));
+    }
 
     const built = [];
     for (const c of cols) {
       const clips = vids
         .filter(v => v.collection_id === c.id)
+        // A row with no file behind it cannot be played, and letting one
+        // through used to throw here — which killed discovery outright and
+        // left the whole app stuck with an empty library.
+        .filter(v => v && typeof v.storage_path === 'string' && v.storage_path)
         .sort((a, b) => a.video_number - b.video_number)
         .map(v => {
           const realFps = (v.frame_count && v.recording_duration_s)
@@ -1286,9 +1372,13 @@ const SUPA_HEADERS = {
     if (built.length) {
       COLLECTIONS = built;
       POOL = built.flatMap(c => c.videos);
+      state.libraryError = '';
     } else if (!POOL.length) {
       COLLECTIONS = MANUAL_COLLECTIONS.map(c => ({ ...c }));
       POOL = COLLECTIONS.flatMap(c => c.videos || []);
+      if (!POOL.length && !state.libraryError) {
+        state.libraryError = 'The clip library came back empty — no videos are published yet.';
+      }
     }
     render();
   }
