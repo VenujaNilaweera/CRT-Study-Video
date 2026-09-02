@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=11">
+<link rel="stylesheet" href="styles.css?v=12">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -96,7 +96,14 @@ const SUPA_HEADERS = {
 (() => {
   const app = document.getElementById('app');
   const hdrActions = document.getElementById('hdrActions');
-  let state = { view: 'login', user: null, col: null, vidIndex: 0, marked: null, saving: false, msg: '', err: '', speed: 1, onboardPage: 0 };
+  let state = {
+    view: 'login', user: null, marked: null, saving: false, msg: '', err: '', speed: 1,
+    onboardPage: 0,
+    orderSeed: null,     // seeds the tie-break shuffle in the serving queue
+    queue: [],           // this participant's clips, in the order they'll see them
+    qIndex: 0,           // how far along that queue they are
+    queueReady: false
+  };
   let prevView = null;            // drives the login typing replay
   restoreSession();               // survive page reloads (e.g. live-reload servers, accidental refresh)
   let annotations = loadAnnotations();
@@ -126,11 +133,10 @@ const SUPA_HEADERS = {
       if (!state.user) { localStorage.removeItem(SESSION_KEY); return; }
       localStorage.setItem(SESSION_KEY, JSON.stringify({
         user: state.user,
-        // A reload always lands on a settled screen — replaying mid-onboarding
-        // from a stored page index isn't worth the extra persisted state.
-        view: (state.view === 'login' || state.view === 'onboarding') ? 'collections' : state.view,
-        col: state.col,
-        vidIndex: state.vidIndex
+        // The queue is rebuilt from scratch on every load (it has to be — the
+        // set of clips this person has already marked may have grown), so only
+        // who they are and their draw order are worth keeping.
+        orderSeed: state.orderSeed
       }));
     } catch {}
   }
@@ -139,9 +145,11 @@ const SUPA_HEADERS = {
       const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
       if (s && s.user && s.user.name) {
         state.user = s.user;
-        state.view = s.view || 'collections';
-        state.col = s.col ?? null;
-        state.vidIndex = Number.isInteger(s.vidIndex) ? s.vidIndex : 0;
+        // Hold on the "preparing" card until the rebuilt queue arrives.
+        state.view = 'loading';
+        // Reuse the saved order so a refresh doesn't redraw a different one; a
+        // session saved before this feature existed just gets one now.
+        state.orderSeed = Number.isFinite(s.orderSeed) ? s.orderSeed : newOrderSeed();
         // marked/saving/messages always start clean after a reload.
         state.marked = null; state.saving = false; state.msg = ''; state.err = '';
         // A returning viewer whose session is restored skips the login screen,
@@ -154,17 +162,107 @@ const SUPA_HEADERS = {
       }
     } catch {}
   }
-  // Has THIS user already annotated a given collection+video?
-  function isDone(colName, videoIndex) {
-    if (!state.user) return false;
-    return annotations.some(a =>
-      a.name === state.user.name &&
-      a.collection === colName &&
-      a.videoIndex === videoIndex);
+  /* ---------- per-participant running order ----------
+     With one fixed order, every participant annotates the same opening clips
+     and the later ones collect almost nothing. Each sign-in draws a seed that
+     shuffles BOTH the collections and the clips inside them, so one viewer
+     opens on Collection 01, the next on Collection 03, and the workload
+     spreads across the whole library. The seed is saved with the session, so
+     a reload keeps the order steady mid-study; signing in again draws a fresh
+     one. Marks are tied to clip ids (see isDone), so reordering never
+     disturbs anything already recorded. */
+  function newOrderSeed() {
+    return Math.floor(Math.random() * 4294967296) >>> 0;
   }
-  function doneCount(col) {
-    return col.videos.reduce((n, _v, i) => n + (isDone(col.name, i + 1) ? 1 : 0), 0);
+  // mulberry32: tiny deterministic PRNG — one seed always yields one order.
+  function seededRandom(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
   }
+  function shuffled(list, rand) {
+    const a = list.slice();
+    for (let i = a.length - 1; i > 0; i--) {          // Fisher-Yates
+      const j = Math.floor(rand() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  /* ---------- the serving queue ----------
+     Participants no longer pick a collection; the app hands them clips one
+     after another. The order is chosen to even out coverage:
+
+       1. drop every clip this person has already marked (never repeat one),
+       2. sort what is left by how many marks each clip already carries,
+          fewest first, so the quietest clips get served before the busy ones,
+       3. shuffle WITHIN each equal-count tier, so two people signing in at
+          the same moment aren't handed the identical clip.
+
+     `times_annotated` comes from the videos table (see supabase_balancing.sql).
+     If that column isn't there yet every clip reads as zero, the whole library
+     lands in one tier, and step 3 alone still scatters people across it. */
+  const SET_SIZE = 10;          // clips per run before we offer a breather
+  let POOL = [];                // every clip, flat, exactly as fetched
+  let discovery = null;         // resolves once the library has been loaded
+
+  function buildQueue(seenIds) {
+    const rand = seededRandom(state.orderSeed ?? newOrderSeed());
+    const tiers = new Map();
+    for (const v of POOL) {
+      if (v.videoId && seenIds.has(v.videoId)) continue;      // already marked
+      const n = Number(v.timesAnnotated) || 0;
+      if (!tiers.has(n)) tiers.set(n, []);
+      tiers.get(n).push(v);
+    }
+    const out = [];
+    for (const n of [...tiers.keys()].sort((a, b) => a - b)) {
+      out.push(...shuffled(tiers.get(n), rand));
+    }
+    return out;
+  }
+
+  /* Everything this participant has already marked — the browser's own record
+     merged with the server's. Local alone would forget on a new phone or a
+     cleared cache and start showing old clips again. */
+  async function fetchSeen(name) {
+    const ids = new Set();
+    for (const a of annotations) {
+      if (a.name === name && a.videoId) ids.add(a.videoId);
+    }
+    try {
+      const res = await fetch(`${REST_URL}/rpc/crt_seen_videos`, {
+        method: 'POST',
+        headers: SUPA_HEADERS,
+        body: JSON.stringify({ p_name: name })
+      });
+      if (res.ok) {
+        for (const row of await res.json()) {
+          const id = (row && row.video_id) || row;
+          if (id) ids.add(id);
+        }
+      }
+    } catch { /* helper not installed, or offline — the local record stands */ }
+    return ids;
+  }
+
+  async function prepareQueue() {
+    try { await discovery; } catch {}
+    const seen = state.user ? await fetchSeen(state.user.name) : new Set();
+    state.queue = buildQueue(seen);
+    state.qIndex = 0;
+    state.queueReady = true;
+  }
+
+  const currentClip = () => (state.queue && state.queue[state.qIndex]) || null;
+  // How far through the current run of SET_SIZE they are.
+  const setDone = () => state.qIndex % SET_SIZE;
+  const setNumber = () => Math.floor(state.qIndex / SET_SIZE) + 1;
+  // Clips left in this run — a final short set is normal near the end.
+  const setTotal = () => Math.min(SET_SIZE, state.queue.length - (setNumber() - 1) * SET_SIZE);
 
   /* ---------- icons ----------
      Inline SVG rather than emoji: emoji render differently on every platform
@@ -208,8 +306,9 @@ const SUPA_HEADERS = {
   // same way: gate it shut for this browser and drop into Collections.
   function finishOnboarding() {
     try { localStorage.setItem(ONBOARD_KEY, '1'); } catch {}
-    state.view = 'collections';
     state.onboardPage = 0;
+    // Straight into the first clip — there is nothing to choose.
+    state.view = state.queueReady ? (currentClip() ? 'player' : 'finished') : 'loading';
     return render();
   }
 
@@ -265,8 +364,10 @@ const SUPA_HEADERS = {
     let html = '';
     if (state.view === 'login') html = viewLogin();
     else if (state.view === 'onboarding') html = viewOnboarding();
-    else if (state.view === 'collections') html = viewCollections();
-    else if (state.view === 'videos') html = viewVideos();
+    else if (state.view === 'loading') html = viewLoading();
+    else if (state.view === 'setdone') html = viewSetDone();
+    else if (state.view === 'finished') html = viewFinished();
+    else if (state.view === 'paused') html = viewPaused();
     else if (state.view === 'player') html = viewPlayer();
     app.innerHTML = html;
 
@@ -299,21 +400,18 @@ const SUPA_HEADERS = {
   window.addEventListener('popstate', () => {
     if (!backTrapPrimed) return;               // trap not armed yet — let it be
     if (state.view === 'player') {
-      // Up to the current collection's video list.
-      state.view = 'videos'; state.marked = null; state.msg = ''; state.err = '';
+      // There is no list to climb back to any more, so Back pauses the run —
+      // which is also the one place that offers a deliberate way out.
+      state.marked = null; state.msg = ''; state.err = '';
+      state.view = 'paused';
       stopClock(); render();
-      try { history.pushState({ crtTrap: 1 }, ''); } catch {}
-    } else if (state.view === 'videos') {
-      // Up to the collections menu.
-      state.view = 'collections'; state.col = null;
-      render();
       try { history.pushState({ crtTrap: 1 }, ''); } catch {}
     } else if (state.view === 'onboarding') {
       // Don't let Back drop out of the walkthrough into a blank history slot.
       render();
       try { history.pushState({ crtTrap: 1 }, ''); } catch {}
     }
-    // collections / login: allow the Back to proceed (the site may navigate away).
+    // paused / setdone / finished / login: let Back proceed and leave the site.
   });
 
   // The quote types itself out on the first paint of each page load. Typing
@@ -391,12 +489,6 @@ const SUPA_HEADERS = {
           <h3>Clinical phase detection in capillary refill</h3>
           <p>Capillary refill is judged by eye — and trained clinicians disagree on where it ends. Your marks measure that variation against frame-accurate recordings.</p>
 
-          <ol class="about-steps">
-            <li><span class="n">1</span><div><b>Watch</b> a short clip</div></li>
-            <li><span class="n">2</span><div><b>Mark</b> when the colour returns</div></li>
-            <li><span class="n">3</span><div><b>Save</b> and move on</div></li>
-          </ol>
-
           <div class="about-note">
             <b>No full names.</b> Initials are enough — they only group your own responses. No patient data is collected.
           </div>
@@ -429,8 +521,8 @@ const SUPA_HEADERS = {
     },
     {
       eyebrow: 'Step 3 of 3 · Begin',
-      title: 'Getting started',
-      body: 'Pick a collection from the menu, then choose any video inside it to start watching. Your progress is saved as you go, so you can always pick up right where you left off.',
+      title: 'Your clips come to you',
+      body: `There's nothing to choose — clips arrive one after another, in <b>sets of ${SET_SIZE}</b>. After each set you can carry on or stop. You'll never be shown the same clip twice, and everything is saved as you go.`,
       illo: 'pick'
     }
   ];
@@ -454,9 +546,12 @@ const SUPA_HEADERS = {
         </div>
       </div>`;
     }
+    // A run of SET_SIZE clips filling up one by one.
+    const dots = Array.from({ length: SET_SIZE },
+      (_, i) => `<span style="animation-delay:${(i * 0.26).toFixed(2)}s"></span>`).join('');
     return `<div class="ob-scene ob-scene-pick">
-      <div class="ob-mini-tile">${icon('folder', 15)}<span>Collection 01</span></div>
-      <div class="ob-mini-row"><span class="ob-mini-play">&#9654;</span>Video 01</div>
+      <div class="ob-set-pill">${icon('dot', 10)} one set &middot; ${SET_SIZE} clips</div>
+      <div class="ob-set-dots">${dots}</div>
     </div>`;
   }
 
@@ -487,45 +582,45 @@ const SUPA_HEADERS = {
     </div>`;
   }
 
-  function viewCollections() {
-    const items = COLLECTIONS.map(c => {
-      const done = doneCount(c);
-      return `<button class="tile" onclick="window.__act('opencol','${c.id}')">
-        <div class="row">
-          <div class="thumb">${icon('folder', 20)}</div>
-          <span class="badge ${done === c.videos.length && c.videos.length ? 'done' : ''}">${done}/${c.videos.length} done</span>
-        </div>
-        <div>
-          <div class="t">${esc(c.name)}</div>
-          <div class="m">${c.videos.length} video${c.videos.length !== 1 ? 's' : ''}</div>
-        </div>
-      </button>`;
-    }).join('');
-    return `<div class="page-head"><h2>Collections</h2><p class="muted">Pick a folder to see its videos.</p></div>
-      ${items ? `<div class="grid">${items}</div>` : '<div class="card muted">No collections yet.</div>'}`;
+  /* ---------- between-clip screens ----------
+     The participant never picks anything: they sign in, watch, mark, and the
+     app decides what comes next. These are the only pauses in that run. */
+  function viewLoading() {
+    return `<div class="card centred-card">
+      <div class="vid-loading static"><span class="spin"></span> Preparing your clips…</div>
+    </div>`;
   }
 
-  function viewVideos() {
-    const col = COLLECTIONS.find(c => c.id === state.col);
-    if (!col) return `<div class="card muted">Loading videos…</div>`;
-    const done = doneCount(col);
-    const items = col.videos.map((v, i) => {
-      const d = isDone(col.name, i + 1);
-      return `<div class="vid-row" onclick="window.__act('openvid',${i})">
-        <div class="num">${String(i + 1).padStart(2, '0')}</div>
-        <div class="info">
-          <div class="t">${esc(v.title)}</div>
-          <div class="m">${esc(v.file || '')}${v.file ? ' · ' : ''}${v.fps || 30} fps</div>
-        </div>
-        <span class="badge ${d ? 'done' : 'todo'}">${d ? '✓ Done' : 'Watch'}</span>
-      </div>`;
-    }).join('');
-    return `<div class="crumb"><a onclick="window.__act('backcols')">Collections</a><span>/</span><span>${esc(col.name)}</span></div>
-      <div class="page-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-        <h2>${esc(col.name)}</h2>
-        <span class="progress-pill">${done} of ${col.videos.length} annotated</span>
-      </div>
-      ${items || '<div class="card muted">No videos in this collection.</div>'}`;
+  function viewSetDone() {
+    const left = Math.max(0, state.queue.length - state.qIndex);
+    const doneTotal = state.qIndex;
+    return `<div class="card centred-card run-done">
+      <div class="run-tick">${icon('check', 26)}</div>
+      <h2>Set ${setNumber() - 1} complete</h2>
+      <p class="muted">That's <b>${doneTotal}</b> clip${doneTotal === 1 ? '' : 's'} marked. Thank you — your marks are saved.</p>
+      <p class="muted small-note">${left} clip${left === 1 ? '' : 's'} still waiting, whenever you have time.</p>
+      <button class="btn nextvid block" onclick="window.__act('nextset')">Continue with the next ${Math.min(SET_SIZE, left)} ${icon('fwd', 16)}</button>
+      <button class="btn neutral block" onclick="window.__act('logout')">Finish for now</button>
+    </div>`;
+  }
+
+  function viewFinished() {
+    return `<div class="card centred-card run-done">
+      <div class="run-tick">${icon('check', 26)}</div>
+      <h2>All done — thank you</h2>
+      <p class="muted">You've marked every clip available to you. Nothing is repeated, so there's nothing further to watch right now.</p>
+      <button class="btn neutral block" onclick="window.__act('logout')">Sign out</button>
+    </div>`;
+  }
+
+  function viewPaused() {
+    const left = Math.max(0, state.queue.length - state.qIndex);
+    return `<div class="card centred-card run-done">
+      <h2>Paused</h2>
+      <p class="muted">${state.qIndex} clip${state.qIndex === 1 ? '' : 's'} marked so far · ${left} left.</p>
+      <button class="btn nextvid block" onclick="window.__act('resume')">Back to the clip ${icon('fwd', 16)}</button>
+      <button class="btn neutral block" onclick="window.__act('logout')">Finish for now</button>
+    </div>`;
   }
 
   /* ---------- per-viewer watermark ----------
@@ -567,29 +662,25 @@ const SUPA_HEADERS = {
   }
 
   function viewPlayer() {
-    const col = COLLECTIONS.find(c => c.id === state.col);
-    if (!col || !col.videos[state.vidIndex]) return `<div class="card muted">Loading video…</div>`;
-    const v = col.videos[state.vidIndex];
-    const total = col.videos.length;
-    const current = state.vidIndex + 1;
+    const v = currentClip();
+    if (!v) return `<div class="card muted">Loading clip…</div>`;
     const fps = Number(v.fps) || 30;
-    const hasPrev = state.vidIndex > 0;
-    const hasNext = state.vidIndex < total - 1;
-    const done = isDone(col.name, current);
+    const doneHere = setDone();          // finished so far in this run of 10
+    const total = setTotal();
+    const isLastOfSet = doneHere + 1 >= total;
+    const pct = Math.round((doneHere / total) * 100);
 
-    return `<div class="crumb">
-        <a onclick="window.__act('backcols')">Collections</a><span>/</span>
-        <a onclick="window.__act('opencol','${col.id}')">${esc(col.name)}</a><span>/</span>
-        <span>${esc(v.title)}</span>
-      </div>
-      <div class="page-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+    /* The counter is the whole progress story now: no collections, no clip
+       list — just "how far through this run am I". */
+    return `<div class="page-head run-head">
         <div class="player-title">
-          <button class="btn neutral player-back" title="Back to the video list"
-                  onclick="window.__act('opencol','${col.id}')">${icon('back', 16)} Menu</button>
-          <h2>${esc(v.title)}</h2>
+          <button class="btn neutral player-back" title="Pause and see your progress"
+                  onclick="window.__act('pause')">${icon('back', 16)} Pause</button>
+          <h2>Clip ${doneHere + 1} of ${total}</h2>
         </div>
-        <span class="progress-pill">Video ${current} of ${total}${done ? ' · ✓ annotated' : ''}</span>
+        <span class="progress-pill">${doneHere} of ${total} done${setNumber() > 1 ? ` · set ${setNumber()}` : ''}</span>
       </div>
+      <div class="run-bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
       <div class="player-layout">
         <div class="video-panel">
           <div class="vid-stage">
@@ -621,11 +712,10 @@ const SUPA_HEADERS = {
           </div>
           <button class="btn nextvid block" id="nextVidBtn"
                   title="Saves your mark, then moves on (N)"
-                  onclick="window.__act('submit')">${hasNext ? `Save &amp; Next clip ${icon('fwd', 16)}` : `Save &amp; Finish ${icon('check', 16)}`}</button>
+                  onclick="window.__act('submit')">${isLastOfSet ? `Save &amp; finish set ${icon('check', 16)}` : `Save &amp; Next clip ${icon('fwd', 16)}`}</button>
           <div id="markPanel">${markPanelHtml()}</div>
           <div class="nav-row">
-            <button class="btn neutral" onclick="window.__act('prev')" ${hasPrev ? '' : 'disabled'}>${icon('back', 16)} Prev</button>
-            <button class="btn neutral" onclick="window.__act('restart')">${icon('retry', 16)} Restart</button>
+            <button class="btn neutral" onclick="window.__act('restart')">${icon('retry', 16)} Restart clip</button>
           </div>
           <div class="shortcuts">
             <span><kbd>Space</kbd> play / pause</span>
@@ -640,11 +730,9 @@ const SUPA_HEADERS = {
   /* The mark panel is re-rendered ON ITS OWN so that marking/saving never
      rebuilds the <video> element (which would restart buffering). */
   function markPanelHtml() {
-    const col = COLLECTIONS.find(c => c.id === state.col);
-    const v = col?.videos[state.vidIndex];
+    const v = currentClip();
     if (!v) return '';
     const fps = Number(v.fps) || 30;
-    const hasNext = state.vidIndex < col.videos.length - 1;
     const crt = crtAt(v, state.marked);
     const mf = state.marked != null ? frameInFile(v, state.marked) : null;
     const body = state.marked != null
@@ -671,15 +759,12 @@ const SUPA_HEADERS = {
   /* ---------- live clock + transport ---------- */
   let clockTimer = null;
   function playerCtx() {
-    const col = COLLECTIONS.find(c => c.id === state.col);
-    const v = col?.videos[state.vidIndex];
+    const v = currentClip();
     return { vid: document.getElementById('vid'), fps: Number(v?.fps) || 30 };
   }
   let scrubbing = false;
   // Current video object (for stamp/CRT lookups).
-  function currentVideo() {
-    return COLLECTIONS.find(c => c.id === state.col)?.videos[state.vidIndex] || null;
-  }
+  function currentVideo() { return currentClip(); }
   // Frame in the FILE at video-time t (the encoded/file fps).
   function frameInFile(v, t) {
     const ff = (v && v.fps) || 30;
@@ -891,6 +976,15 @@ const SUPA_HEADERS = {
     if (vid.paused) vid.play().catch(() => {}); else vid.pause();
     updateClockNow();
   }
+  // Jump n seconds, clamped to the clip. The arrow/J/L keys and the jump
+  // actions have always called this; it was simply never written.
+  function seekBy(seconds) {
+    const { vid } = playerCtx();
+    if (!vid || !isFinite(vid.duration)) return;
+    vid.pause();
+    vid.currentTime = Math.min(Math.max(0, vid.currentTime + seconds), vid.duration);
+    updateClockNow();
+  }
   function stepFrames(n) {
     const { vid, fps } = playerCtx();
     if (!vid) return;
@@ -942,14 +1036,6 @@ const SUPA_HEADERS = {
   }
   document.addEventListener('keydown', onOnboardKey, true);
 
-  function openVideo(index) {
-    state.vidIndex = index;
-    state.marked = null;
-    state.msg = '';
-    state.err = '';
-    state.view = 'player';
-  }
-
   /* ---------- actions ---------- */
   window.__act = async function(act, id) {
     state.msg = ''; state.err = '';
@@ -962,10 +1048,20 @@ const SUPA_HEADERS = {
       const age = document.getElementById('f-age').value;
       if (!name || !status) { state.err = 'Name and status are required.'; return render(); }
       state.user = { name, status, age };
+      // A fresh order each sign-in, so two participants never march through
+      // the clips in step. The queue itself is assembled below.
+      state.orderSeed = newOrderSeed();
+      state.queueReady = false;
       let onboarded = false;
       try { onboarded = localStorage.getItem(ONBOARD_KEY) === '1'; } catch {}
-      if (onboarded) { state.view = 'collections'; }
+      // Walk through the explainer while the queue is being put together;
+      // otherwise hold on a brief "preparing" card.
+      if (onboarded) { state.view = 'loading'; }
       else { state.view = 'onboarding'; state.onboardPage = 0; }
+      render();
+      await prepareQueue();
+      // Don't yank someone out of the walkthrough just because the queue landed.
+      if (state.view === 'loading') state.view = currentClip() ? 'player' : 'finished';
       return render();
     }
     if (act === 'onboardnext') { state.onboardPage = Math.min(ONBOARD_PAGES.length - 1, (state.onboardPage || 0) + 1); return render(); }
@@ -973,20 +1069,15 @@ const SUPA_HEADERS = {
     if (act === 'onboardgoto') { state.onboardPage = Math.max(0, Math.min(ONBOARD_PAGES.length - 1, Number(id) || 0)); return render(); }
     if (act === 'onboardskip' || act === 'onboardfinish') { return finishOnboarding(); }
     if (act === 'logout') {
-      state.user = null; state.view = 'login'; state.col = null; state.vidIndex = 0; state.marked = null;
+      state.user = null; state.view = 'login'; state.marked = null;
+      state.queue = []; state.qIndex = 0; state.queueReady = false;
+      stopClock();
       try { localStorage.removeItem(SESSION_KEY); } catch {}
       return render();
     }
-    if (act === 'opencol') { state.col = id; state.view = 'videos'; return render(); }
-    if (act === 'backcols') { state.view = 'collections'; state.col = null; return render(); }
-    if (act === 'openvid') { openVideo(Number(id)); return render(); }
-
-    if (act === 'prev') { if (state.vidIndex > 0) openVideo(state.vidIndex - 1); return render(); }
-    if (act === 'next') {
-      const col = COLLECTIONS.find(c => c.id === state.col);
-      if (state.vidIndex < col.videos.length - 1) openVideo(state.vidIndex + 1);
-      return render();
-    }
+    if (act === 'pause')   { stopClock(); state.view = 'paused'; return render(); }
+    if (act === 'resume')  { state.view = currentClip() ? 'player' : 'finished'; return render(); }
+    if (act === 'nextset') { state.view = currentClip() ? 'player' : 'finished'; return render(); }
     if (act === 'restart') {
       const vid = document.getElementById('vid');
       if (vid) { vid.currentTime = 0; vid.play().catch(() => {}); }
@@ -1027,13 +1118,18 @@ const SUPA_HEADERS = {
 
     if (act === 'submit') {
       if (state.saving) return;
-      const col = COLLECTIONS.find(c => c.id === state.col);
-      const v = col.videos[state.vidIndex];
+      const v = currentClip();
+      if (!v) return render();
       const fps = Number(v.fps) || 30;
+      /* Step to the next clip in the queue. At a set boundary the run pauses
+         on the "set complete" screen instead of rolling straight on, and once
+         the queue is exhausted there is nothing left for this person to mark. */
       const goNext = () => {
-        const hasNext = state.vidIndex < col.videos.length - 1;
-        if (hasNext) { openVideo(state.vidIndex + 1); }
-        else { state.view = 'videos'; state.marked = null; state.msg = 'Collection complete — thank you!'; }
+        state.qIndex += 1;
+        state.marked = null; state.msg = ''; state.err = '';
+        if (state.qIndex >= state.queue.length) state.view = 'finished';
+        else if (state.qIndex % SET_SIZE === 0) state.view = 'setdone';
+        else state.view = 'player';
         return render();
       };
 
@@ -1047,8 +1143,8 @@ const SUPA_HEADERS = {
         name: state.user.name,
         status: state.user.status,
         age: state.user.age,
-        collection: col.name,
-        videoIndex: state.vidIndex + 1,
+        collection: v.collectionName || '',
+        videoIndex: v.videoNumber ?? (state.qIndex + 1),
         videoTitle: v.title,
         videoId: v.videoId || null,   // FK into the Supabase `videos` table
         // timeSeconds is the study value: real CRT since release when stamped,
@@ -1140,6 +1236,7 @@ const SUPA_HEADERS = {
           return {
             id: c.id + '-' + v.video_number,
             videoId: v.id,                 // UUID FK for annotations
+            videoNumber: v.video_number,   // stable position IN THE COLLECTION
             title: v.title || ('CRT Test ' + String(v.video_number).padStart(2, '0')),
             file: v.storage_path,
             url: BUCKET_PUBLIC_URL + v.storage_path.split('/').map(encodeURIComponent).join('/'),
@@ -1153,7 +1250,13 @@ const SUPA_HEADERS = {
             stamped: !!v.stamped,
             frameCount: v.frame_count != null ? v.frame_count : null,
             recDuration: v.recording_duration_s != null ? v.recording_duration_s : null,
-            stampTimeS: v.stamp_time_s != null ? v.stamp_time_s : null
+            stampTimeS: v.stamp_time_s != null ? v.stamp_time_s : null,
+            // Which collection it came from — recorded with the mark, but never
+            // shown as a choice: participants just receive the next clip.
+            collectionName: c.name,
+            // Marks already collected for this clip; drives the running order.
+            // Absent until supabase_balancing.sql has been run, which reads as 0.
+            timesAnnotated: Number(v.times_annotated) || 0
           };
         });
       if (clips.length) built.push({ id: c.id, name: c.name, icon: c.icon || '📁', videos: clips });
@@ -1161,28 +1264,19 @@ const SUPA_HEADERS = {
 
     if (built.length) {
       COLLECTIONS = built;
-    } else if (!COLLECTIONS.length) {
+      POOL = built.flatMap(c => c.videos);
+    } else if (!POOL.length) {
       COLLECTIONS = MANUAL_COLLECTIONS.map(c => ({ ...c }));
-    }
-    // Keep the user on a valid screen if their current collection vanished.
-    const activeCol = COLLECTIONS.find(c => c.id === state.col);
-    if (state.col && !activeCol) {
-      state.view = state.user ? 'collections' : 'login';
-      state.col = null;
-      state.vidIndex = 0;
-    } else if (activeCol) {
-      // Clamp a restored video index to the collection's real length.
-      if (state.vidIndex < 0 || state.vidIndex >= activeCol.videos.length) state.vidIndex = 0;
-    }
-    // A restored player/videos view with no valid collection falls back gracefully.
-    if ((state.view === 'player' || state.view === 'videos') && !COLLECTIONS.find(c => c.id === state.col)) {
-      state.view = state.user ? 'collections' : 'login';
+      POOL = COLLECTIONS.flatMap(c => c.videos || []);
     }
     render();
   }
 
   render();
-  discoverAll();
+  discovery = discoverAll();
+  // A restored session lands straight back in the player, so its queue has to
+  // be rebuilt before anything can be shown.
+  if (state.user) prepareQueue().then(() => render());
   flushQueue().then(() => render());   // retry any marks left unsaved from a previous session
 })();
 </script>
