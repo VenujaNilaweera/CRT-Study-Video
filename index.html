@@ -68,7 +68,7 @@ const STORAGE_KEY = 'crt-study-annotations';
 const SESSION_KEY = 'crt-study-session';
 const THEME_KEY = 'crt-theme';
 const INTRO_KEY = 'crt-intro-seen';   // login intro animation plays once per browser
-const ONBOARD_KEY = 'crt-onboarding-seen';   // first-run walkthrough plays once per browser
+const ONBOARD_KEY = 'crt-onboarding-seen';   // names that have finished the walkthrough
 
 /* =========================================================================
    SUPABASE BACKEND
@@ -152,16 +152,39 @@ const SUPA_HEADERS = {
         state.orderSeed = Number.isFinite(s.orderSeed) ? s.orderSeed : newOrderSeed();
         // marked/saving/messages always start clean after a reload.
         state.marked = null; state.saving = false; state.msg = ''; state.err = '';
-        // A returning viewer whose session is restored skips the login screen,
-        // so the first-login onboarding check never runs for them. Show the
-        // walkthrough here too if they've never seen it — it's gated by the
-        // same ONBOARD_KEY, so it still plays exactly once per browser.
-        let onboarded = false;
-        try { onboarded = localStorage.getItem(ONBOARD_KEY) === '1'; } catch {}
-        if (!onboarded) { state.view = 'onboarding'; state.onboardPage = 0; }
+        // A restored session skips the login screen, so the sign-in check
+        // never runs for it — repeat the same per-name test here.
+        if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.onboardPage = 0; }
       }
     } catch {}
   }
+  /* ---------- who has seen the walkthrough ----------
+     Gated per PARTICIPANT, not per browser. Several people share one phone in
+     a ward, so a single "seen it" flag meant only the first of them ever got
+     the explanation. Names are matched case- and space-insensitively; the old
+     boolean flag parses to a non-array and is simply ignored, which shows the
+     walkthrough again once — the safer way round. */
+  function onboardedNames() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(ONBOARD_KEY) || '[]');
+      return Array.isArray(raw) ? raw : [];
+    } catch { return []; }
+  }
+  const nameKey = n => String(n || '').trim().toLowerCase();
+  function hasOnboarded(name) {
+    const k = nameKey(name);
+    return !!k && onboardedNames().includes(k);
+  }
+  function markOnboarded(name) {
+    const k = nameKey(name);
+    if (!k) return;
+    const list = onboardedNames();
+    if (list.includes(k)) return;
+    list.push(k);
+    // Keep the record from growing without bound on a shared device.
+    try { localStorage.setItem(ONBOARD_KEY, JSON.stringify(list.slice(-200))); } catch {}
+  }
+
   /* ---------- per-participant running order ----------
      With one fixed order, every participant annotates the same opening clips
      and the later ones collect almost nothing. Each sign-in draws a seed that
@@ -305,7 +328,7 @@ const SUPA_HEADERS = {
   // Skip, or reaching the last page's Start button, both end onboarding the
   // same way: gate it shut for this browser and drop into Collections.
   function finishOnboarding() {
-    try { localStorage.setItem(ONBOARD_KEY, '1'); } catch {}
+    markOnboarded(state.user && state.user.name);
     state.onboardPage = 0;
     // Straight into the first clip — there is nothing to choose.
     state.view = state.queueReady ? (currentClip() ? 'player' : 'finished') : 'loading';
@@ -502,9 +525,9 @@ const SUPA_HEADERS = {
   /* =========================================================================
      FIRST-RUN ONBOARDING
      A 3-page "Next / Next / Start" walkthrough shown once per browser, right
-     after the first successful login (ONBOARD_KEY gates it, same convention
+     after each participant's first sign-in (gated per name, so everyone who
      as INTRO_KEY for the login typing animation). Skippable at any point;
-     a returning viewer never sees it again once ONBOARD_KEY is set.
+     uses a shared device still gets it). Skippable at any point.
      ========================================================================= */
   const ONBOARD_PAGES = [
     {
@@ -1052,11 +1075,9 @@ const SUPA_HEADERS = {
       // the clips in step. The queue itself is assembled below.
       state.orderSeed = newOrderSeed();
       state.queueReady = false;
-      let onboarded = false;
-      try { onboarded = localStorage.getItem(ONBOARD_KEY) === '1'; } catch {}
       // Walk through the explainer while the queue is being put together;
       // otherwise hold on a brief "preparing" card.
-      if (onboarded) { state.view = 'loading'; }
+      if (hasOnboarded(name)) { state.view = 'loading'; }
       else { state.view = 'onboarding'; state.onboardPage = 0; }
       render();
       await prepareQueue();
