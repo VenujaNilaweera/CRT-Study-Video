@@ -205,6 +205,45 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   margin: 12px auto;
 }
 .login-card { margin: 0; }
+/* Subordinate to the study title above it — this is a form label, not a
+   second headline competing with the name of the study. */
+.login-card .page-head h2 { font-size: clamp(17px, 2.4vw, 20px); }
+
+/* ---- Study title + one-paragraph introduction ----
+   Spans the full grid so it is read BEFORE either column: the study is named,
+   then explained, and only then does the form start asking for details. */
+.study-hero {
+  grid-column: 1 / -1;
+  max-width: 760px;
+  margin-bottom: 2px;
+}
+.hero-eyebrow {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 1.7px;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin-bottom: 10px;
+}
+.hero-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(23px, 4.4vw, 38px);
+  line-height: 1.15;
+  letter-spacing: -0.6px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 12px;
+  /* Keeps "(CRT)" from being stranded alone on a line of its own. */
+  text-wrap: balance;
+}
+.hero-lede {
+  font-size: clamp(14.5px, 1.6vw, 16.5px);
+  line-height: 1.65;
+  color: var(--ink-2);
+  margin: 0;
+  max-width: 68ch;
+}
 
 .about-panel {
   border: 1px solid var(--line);
@@ -298,8 +337,9 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
 @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @keyframes quoteIn { from { opacity: 0; transform: translateY(8px) scale(.6); } to { opacity: .5; transform: none; } }
 
-.login-layout.intro .login-card { animation: riseIn .55s cubic-bezier(.22,.8,.3,1) both; }
-.login-layout.intro .about-panel { animation: riseIn .55s cubic-bezier(.22,.8,.3,1) .1s both; }
+.login-layout.intro .study-hero  { animation: riseIn .55s cubic-bezier(.22,.8,.3,1) both; }
+.login-layout.intro .login-card  { animation: riseIn .55s cubic-bezier(.22,.8,.3,1) .08s both; }
+.login-layout.intro .about-panel { animation: riseIn .55s cubic-bezier(.22,.8,.3,1) .16s both; }
 /* Typewriter caret. It blinks while the quote types and keeps a slow, quieter
    pulse afterwards so the panel never looks frozen while someone reads it. */
 .about-quote .caret {
@@ -426,7 +466,9 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   margin-bottom: 18px;
   overflow: hidden;
 }
-.ob-scene { position: relative; height: 132px; display: flex; align-items: center; justify-content: center; }
+/* Height follows the photographs rather than being fixed, so a picture is
+   never letterboxed or cropped to fit a box drawn for shapes. */
+.ob-scene { position: relative; display: flex; align-items: center; justify-content: center; }
 
 .ob-title { font-size: clamp(18px, 3vw, 21px); margin-bottom: 8px; }
 .ob-body { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin-bottom: 18px; }
@@ -446,67 +488,82 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
 .ob-nav .btn.neutral { flex: 0 0 auto; }
 .ob-primary { flex: 1; }
 
-/* ---- Scene 1: press, release, colour return, marked by a green flash ---- */
-.ob-scene-press .ob-nail {
-  width: 74px; height: 94px;
-  border-radius: 38px 38px 30px 30px;
+/* ---- Shared: a single photograph from a study recording ----
+   The walkthrough is illustrated with real frames rather than drawings, so
+   what it promises and what the player shows are the same picture. */
+.ob-shot {
+  margin: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ob-cap-gap);
+}
+.ob-scene { --ob-cap: 26px; --ob-cap-gap: 7px; }
+.ob-shot img {
+  display: block;
+  width: 100%;
+  /* The width/height ATTRIBUTES on the tag reserve space while the picture
+     loads, but they also land as presentational height — which beats
+     aspect-ratio and stretches the frame. height:auto hands the shape back. */
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 9px;
   border: 1px solid var(--line);
-  position: relative;
-  overflow: hidden;
-  background: var(--pulse-soft);
-  animation: obColor 3.4s ease-in-out infinite;
-}
-.ob-scene-press .ob-flash {
-  position: absolute; inset: 0;
-  background: var(--go);
-  opacity: 0;
-  animation: obFlash 3.4s ease-in-out infinite;
-}
-.ob-scene-press .ob-finger {
-  position: absolute;
-  top: calc(50% - 66px);
-  width: 42px; height: 48px;
-  border-radius: 21px 21px 10px 10px;
   background: var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow);
-  animation: obPress 3.4s ease-in-out infinite;
 }
-.ob-scene-press .ob-tag {
-  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
-  font-family: var(--mono); font-size: 10px; color: var(--muted);
-  white-space: nowrap;
+.ob-shot figcaption {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  line-height: 1.35;
+  color: var(--muted);
+  text-align: center;
+  /* Reserved rather than measured, so every caption occupies the same space
+     whether it wraps to one line or two — that keeps the pictures level with
+     each other, and lets the arrow below be offset by a known amount. */
+  min-height: var(--ob-cap);
 }
-@keyframes obPress {
-  0%, 12% { transform: translateY(0); }
-  32%, 46% { transform: translateY(30px); }
-  58%, 100% { transform: translateY(0); }
-}
-@keyframes obColor {
-  0%, 12% { background: var(--pulse-soft); }
-  /* --surface, not --surface-2 (the panel's own background) — the paled
-     nail needs to stay visibly distinct from the tile behind it. */
-  32%, 46% { background: var(--surface); }
-  62% { background: var(--go-2); }
-  80%, 100% { background: var(--pulse-soft); }
-}
-@keyframes obFlash {
-  0%, 47% { opacity: 0; }
-  50% { opacity: .5; }
-  58%, 100% { opacity: 0; }
+.ob-arrow {
+  flex: none;
+  color: var(--teal);
+  /* Level with the middle of the PICTURES. Centring in the figure would drop
+     the arrow by half the caption block; lift it back by exactly that.
+     (A percentage margin would resolve against the width, not the height.) */
+  align-self: center;
+  transform: translateY(calc((var(--ob-cap) + var(--ob-cap-gap)) / -2));
 }
 
-/* ---- Scene 2: mark the change, see the result, save & next ---- */
-.ob-scene-mark .ob-mini-player {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  width: 100%; padding: 0 22px;
+/* ---- Scene 1: pressure, the release flash, the colour returning ---- */
+.ob-scene-press,
+.ob-scene-mark {
+  height: auto;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 14px 12px;
+}
+
+/* ---- Scene 2: the same release, plus the button that answers it ---- */
+.ob-scene-mark { align-items: flex-start; }
+.ob-mark-side {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  /* Level with the pictures it answers, by the same offset as the arrows. */
+  align-self: center;
+  transform: translateY(calc((var(--ob-cap) + var(--ob-cap-gap)) / -2));
 }
 .ob-mini-mark {
   position: relative;
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--pulse); color: #fff;
   font-family: 'Space Grotesk', sans-serif; font-size: 12.5px; font-weight: 700;
-  border-radius: 9px; padding: 8px 16px;
+  border-radius: 9px; padding: 8px 15px;
+  white-space: nowrap;
   animation: obMarkPress 3.2s ease-in-out infinite;
 }
 .ob-ripple {
@@ -517,17 +574,10 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   animation: obRipple 3.2s ease-in-out infinite;
 }
 .ob-mini-result {
-  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  white-space: nowrap;
   opacity: 0;
   animation: obResult 3.2s ease-in-out infinite;
-}
-.ob-mini-save {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: var(--go); color: #fff;
-  font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
-  border-radius: 9px; padding: 7px 14px;
-  opacity: .55;
-  animation: obSave 3.2s ease-in-out infinite;
 }
 @keyframes obMarkPress {
   0%, 18% { transform: scale(1); }
@@ -545,14 +595,9 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   36%, 74% { opacity: 1; transform: translateY(0); }
   86%, 100% { opacity: 0; }
 }
-@keyframes obSave {
-  0%, 70% { opacity: .55; transform: translateX(0); }
-  80% { opacity: 1; transform: translateX(3px); }
-  90%, 100% { opacity: .55; transform: translateX(0); }
-}
 
 /* ---- Scene 3: a run of clips arriving one after another ---- */
-.ob-scene-pick { flex-direction: column; gap: 14px; }
+.ob-scene-pick { flex-direction: column; gap: 12px; height: auto; padding: 16px 14px; }
 .ob-set-pill {
   display: inline-flex; align-items: center; gap: 7px;
   background: var(--surface); border: 1px solid var(--line);
@@ -572,23 +617,65 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   30%, 78% { background: var(--teal);  transform: scale(1); }
   92%, 100%{ background: var(--line);  transform: scale(1); }
 }
+/* The queue, drawn as a strip of film: the clips themselves, waiting. */
+.ob-strip {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.ob-strip img {
+  flex: 1 1 0;
+  min-width: 0;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 5px;
+  display: block;
+}
+.ob-strip-more {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--muted);
+  padding: 0 3px;
+}
 
 @media (max-width: 520px) {
   .onboard-card { padding: 20px 18px; }
-  .ob-scene { height: 116px; }
   .ob-body { font-size: 13px; }
+  .ob-scene-press, .ob-scene-mark { padding: 12px 10px 10px; gap: 5px; }
+  .ob-scene { --ob-cap: 23px; --ob-cap-gap: 6px; }
+  .ob-shot figcaption { font-size: 8.5px; letter-spacing: .3px; }
+  .ob-mini-mark { font-size: 11.5px; padding: 7px 11px; }
+  .ob-mini-result { font-size: 10.5px; }
+}
+/* Below this the three photos plus a button will not fit in a row, so the
+   answering half of scene 2 drops under the pictures rather than shrinking
+   them past the point where the nail bed is readable. */
+@media (max-width: 400px) {
+  .ob-scene-mark { flex-wrap: wrap; justify-content: center; }
+  .ob-mark-side {
+    flex-direction: row;
+    justify-content: center;
+    width: 100%;
+    /* On its own row now, so the lift that aligned it with the pictures
+       would only push it into their captions. */
+    align-self: auto;
+    transform: none;
+    padding-top: 4px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .onboard-card,
-  .ob-scene-press .ob-nail, .ob-scene-press .ob-flash, .ob-scene-press .ob-finger,
-  .ob-mini-mark, .ob-ripple, .ob-mini-result, .ob-mini-save,
-  .ob-mini-tile, .ob-mini-row {
+  .ob-mini-mark, .ob-ripple, .ob-mini-result, .ob-set-dots span {
     animation: none !important;
   }
-  .ob-scene-press .ob-nail { background: var(--pulse-soft); }
   .ob-mini-result { opacity: 1; transform: none; }
-  .ob-mini-save { opacity: 1; }
+  .ob-set-dots span { background: var(--teal); }
 }
 
 /* ---------- Icons ----------
