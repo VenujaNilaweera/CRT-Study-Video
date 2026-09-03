@@ -282,6 +282,18 @@ const SUPA_HEADERS = {
   }
 
   const currentClip = () => (state.queue && state.queue[state.qIndex]) || null;
+  /* Step to the next clip in the queue. At a set boundary the run pauses on the
+     "set complete" screen instead of rolling straight on; once the queue is
+     exhausted there is nothing left to mark. Used both after a saved mark and
+     by the plain "Skip clip" button, so the two can never drift apart. */
+  function advanceQueue() {
+    state.qIndex += 1;
+    state.marked = null; state.msg = ''; state.err = '';
+    if (state.qIndex >= state.queue.length) state.view = noClipView();
+    else if (state.qIndex % SET_SIZE === 0) state.view = 'setdone';
+    else state.view = 'player';
+    return render();
+  }
   /* Where to go when there is no clip to show. "All done" is only honest if
      the library actually loaded and this person has worked through it; if the
      library itself is empty or unreachable, that is a fault to report, not a
@@ -799,6 +811,8 @@ const SUPA_HEADERS = {
           <div id="markPanel">${markPanelHtml()}</div>
           <div class="nav-row">
             <button class="btn neutral" onclick="window.__act('restart')">${icon('retry', 16)} Restart clip</button>
+            <button class="btn neutral" title="This clip won't play? Move on without saving a mark"
+                    onclick="window.__act('skip')">Skip clip ${icon('fwd', 16)}</button>
           </div>
           <div class="shortcuts">
             <span><kbd>Space</kbd> play / pause</span>
@@ -1173,6 +1187,10 @@ const SUPA_HEADERS = {
       return;
     }
 
+    // Move to the next clip WITHOUT recording anything — the escape hatch for a
+    // clip that won't play, so a participant is never stuck on a dead video.
+    if (act === 'skip') { return advanceQueue(); }
+
     // Transport controls mutate the <video> in place — never re-render here,
     // or the element is rebuilt and playback position is lost.
     if (act === 'playpause') { togglePlay();   return; }
@@ -1210,17 +1228,7 @@ const SUPA_HEADERS = {
       const v = currentClip();
       if (!v) return render();
       const fps = Number(v.fps) || 30;
-      /* Step to the next clip in the queue. At a set boundary the run pauses
-         on the "set complete" screen instead of rolling straight on, and once
-         the queue is exhausted there is nothing left for this person to mark. */
-      const goNext = () => {
-        state.qIndex += 1;
-        state.marked = null; state.msg = ''; state.err = '';
-        if (state.qIndex >= state.queue.length) state.view = 'finished';
-        else if (state.qIndex % SET_SIZE === 0) state.view = 'setdone';
-        else state.view = 'player';
-        return render();
-      };
+      const goNext = advanceQueue;   // shared with the "Skip clip" button
 
       // No mark → treat the green button as a plain "skip to next clip".
       if (state.marked == null) return goNext();
