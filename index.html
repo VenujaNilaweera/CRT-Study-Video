@@ -171,7 +171,12 @@ const SUPA_HEADERS = {
       return Array.isArray(raw) ? raw : [];
     } catch { return []; }
   }
-  const nameKey = n => String(n || '').trim().toLowerCase();
+  // A function declaration, not a const arrow: restoreSession() runs during
+  // start-up BEFORE this line, and a const would still be in its temporal dead
+  // zone then — calling it threw "Cannot access 'nameKey' before initialization",
+  // which the restore try/catch swallowed, silently skipping the walkthrough
+  // check on every refresh. A hoisted function is safe to call from anywhere.
+  function nameKey(n) { return String(n || '').trim().toLowerCase(); }
   function hasOnboarded(name) {
     const k = nameKey(name);
     return !!k && onboardedNames().includes(k);
@@ -1393,9 +1398,20 @@ const SUPA_HEADERS = {
 
   render();
   discovery = discoverAll();
-  // A restored session lands straight back in the player, so its queue has to
-  // be rebuilt before anything can be shown.
-  if (state.user) prepareQueue().then(() => render());
+  // A restored session (page refresh) lands straight back in the player, so its
+  // queue has to be rebuilt before anything can be shown. Crucially it must
+  // also leave the "Preparing your clips…" screen once that's done — the same
+  // hand-off the login path makes. Without it a refresh mid-study hangs on the
+  // loading card until you log out and back in. `catch(()=>{})` guarantees the
+  // hand-off runs even if the rebuild fails (it lands on the error screen then,
+  // never stuck loading). The onboarding check keeps a first-timer's
+  // walkthrough from being skipped: only a still-loading view is advanced.
+  if (state.user) {
+    prepareQueue().catch(() => {}).then(() => {
+      if (state.view === 'loading') state.view = nextView();
+      render();
+    });
+  }
   flushQueue().then(() => render());   // retry any marks left unsaved from a previous session
 })();
 </script>
