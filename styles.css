@@ -387,57 +387,122 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 .about-more .ic { transition: transform .15s; }
 .about-more:hover .ic { transform: translateX(2px); }
 
-/* ---- About / research-details modal ---- */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 10, 12, .6);
+/* ==========================================================================
+   Hamburger button + side drawer (site navigation)
+   ========================================================================== */
+/* Selector carries .hdr so it outranks the generic `.hdr button` rule above,
+   which would otherwise force align-items:center and collapse the three bars
+   to zero width (an empty box). */
+.hdr .menu-btn {
+  display: inline-flex; flex-direction: column;
+  align-items: stretch; justify-content: center; gap: 4px;
+  width: 38px; height: 34px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.28);
+  border-radius: 9px;
+  cursor: pointer;
+  flex: none;
+  transition: background .15s;
+}
+.hdr .menu-btn:hover { background: rgba(255,255,255,.14); }
+.hdr .menu-btn span {
+  display: block; width: 100%; height: 2px; border-radius: 2px;
+  background: var(--header-fg);
+  transition: transform .2s, opacity .2s;
+}
+.hdr .menu-btn[aria-expanded="true"] span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.hdr .menu-btn[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+.hdr .menu-btn[aria-expanded="true"] span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+.drawer-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(4, 10, 12, .55);
   backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  z-index: 100;
+  z-index: 60;
   animation: modalFade .18s ease both;
 }
-.modal-card {
-  position: relative;
+.drawer {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: min(300px, 84vw);
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-right: 1px solid var(--line);
   box-shadow: var(--shadow-lg);
-  padding: clamp(22px, 4vw, 32px);
-  max-width: 540px;
-  width: 100%;
-  max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-  animation: modalRise .22s cubic-bezier(.22,.8,.3,1) both;
+  z-index: 61;
+  display: flex; flex-direction: column;
+  padding: 14px;
+  animation: drawerIn .22s cubic-bezier(.22,.8,.3,1) both;
 }
-.modal-close {
-  position: absolute;
-  top: 14px; right: 14px;
+@keyframes drawerIn { from { transform: translateX(-100%); } to { transform: none; } }
+.drawer-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 4px 14px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.drawer-title {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--muted);
+}
+.drawer-close {
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--ink-2);
-  cursor: pointer;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface-2); color: var(--ink-2);
+  cursor: pointer; transition: background .15s, color .15s;
+}
+.drawer-close:hover { background: var(--pulse-soft); color: var(--pulse); }
+.drawer-link {
+  display: flex; align-items: center; gap: 11px;
+  width: 100%;
+  padding: 12px 12px;
+  margin-bottom: 4px;
+  background: transparent; border: none; border-radius: var(--radius-sm);
+  font-family: 'Inter', sans-serif; font-size: 14.5px; font-weight: 600;
+  color: var(--ink); text-align: left; cursor: pointer;
   transition: background .15s, color .15s;
 }
-.modal-close:hover { background: var(--pulse-soft); color: var(--pulse); }
-.modal-title {
+.drawer-link:hover { background: var(--surface-2); }
+.drawer-link.active { background: var(--teal-soft); color: var(--teal); }
+.drawer-link .ic { color: var(--teal); flex: none; }
+.drawer-link.small { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.drawer-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); }
+
+/* ==========================================================================
+   About page (full screen)
+   ========================================================================== */
+.about-page { max-width: 760px; margin: 0 auto; padding-bottom: 40px; }
+.about-top { margin-bottom: 20px; }
+.about-hero { margin-bottom: 30px; }
+.about-h1 {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: clamp(19px, 2.6vw, 23px);
-  line-height: 1.25;
-  margin: 6px 26px 12px 0;
+  font-size: clamp(24px, 4vw, 34px);
+  line-height: 1.15; letter-spacing: -0.5px;
+  margin: 6px 0 14px;
+  text-wrap: balance;
 }
-.modal-lede {
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--ink-2);
-  margin: 0 0 20px;
+.about-lede {
+  font-size: clamp(15px, 1.8vw, 17px);
+  line-height: 1.65; color: var(--ink-2); margin: 0;
 }
+.about-sec {
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+}
+.about-sec h3 {
+  font-size: clamp(17px, 2.2vw, 20px);
+  margin-bottom: 12px;
+}
+.about-sec p { font-size: 14.5px; line-height: 1.7; color: var(--ink-2); margin-bottom: 12px; }
+.about-sec p:last-child { margin-bottom: 0; }
+.about-quiet { font-size: 13px !important; color: var(--muted) !important; }
+
+.about-steps-list { margin: 0 0 14px; padding-left: 20px; display: grid; gap: 10px; }
+.about-steps-list li { font-size: 14.5px; line-height: 1.65; color: var(--ink-2); }
+.about-steps-list b, .about-bullets b { color: var(--ink); }
+.about-bullets { margin: 14px 0 0; padding-left: 20px; display: grid; gap: 9px; }
+.about-bullets li { font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+
 .about-facts {
   display: grid;
   gap: 12px;
@@ -462,19 +527,75 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   /* Placeholder text is visibly a placeholder, not mistaken for a real name. */
   font-style: italic;
 }
-.modal-card .about-note { margin-bottom: 18px; }
 
-@keyframes modalFade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes modalRise { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+/* Photo slots. A photo that hasn't been added yet shows a tidy labelled
+   frame rather than a broken image, so they can be dropped in one at a
+   time (see aboutPhoto() in index.html). */
+.about-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+}
+.about-photo { margin: 0; }
+.about-photo img {
+  display: block; width: 100%; height: auto;
+  aspect-ratio: 4 / 3; object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.about-photo figcaption {
+  margin-top: 7px; font-size: 12px; line-height: 1.45; color: var(--muted);
+}
+.about-photo.missing img { display: none; }
+.about-photo.missing::before {
+  content: "Photo to be added";
+  display: flex; align-items: center; justify-content: center;
+  aspect-ratio: 4 / 3;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .5px;
+}
+
+/* ---- Feedback form ---- */
+.fb-form textarea {
+  width: 100%;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 15px; font-family: 'Inter', sans-serif; line-height: 1.55;
+  background: var(--surface-2); color: var(--ink);
+  resize: vertical; min-height: 110px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.fb-form textarea:focus {
+  outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft);
+}
+.fb-form .opt { color: var(--muted); font-weight: 400; }
+.fb-form .err a { color: inherit; text-decoration: underline; margin-left: 6px; }
+.fb-done {
+  padding: 20px;
+  background: var(--surface-2);
+  border: 1px solid var(--teal);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+.fb-done p { margin-bottom: 8px; font-size: 14.5px; }
+.fb-done .run-tick { margin: 0 auto 12px; }
+.about-bottom { margin-top: 28px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .modal-backdrop, .modal-card { animation: none !important; }
+  .drawer-backdrop, .drawer { animation: none !important; }
 }
 
 @media (max-width: 520px) {
-  .modal-card { padding: 20px 18px; border-radius: 12px; }
   .about-facts { padding: 13px; gap: 10px; }
+  .about-sec { padding: 20px 0; }
 }
+
+@keyframes modalFade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---- Intro animation: plays once, then the page renders settled ---- */
 @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
