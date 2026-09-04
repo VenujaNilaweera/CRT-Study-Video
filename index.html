@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=16">
+<link rel="stylesheet" href="styles.css?v=17">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -100,6 +100,11 @@ const SUPA_HEADERS = {
     view: 'login', user: null, marked: null, saving: false, msg: '', err: '', speed: 1,
     onboardPage: 0,
     aboutOpen: false,    // the "Read more about this study" panel, overlaid on login
+    // The sign-in form's own fields, held in state (not just the DOM) so a
+    // re-render — a failed validation, or the returning-participant lookup
+    // landing — never wipes what someone already typed.
+    formName: '', formStatus: '', formAge: '',
+    returning: null,     // returning-participant lookup result, while the name field is being checked
     libraryError: '',    // why the clip library is empty, if it is
     orderSeed: null,     // seeds the tie-break shuffle in the serving queue
     queue: [],           // this participant's clips, in the order they'll see them
@@ -277,6 +282,32 @@ const SUPA_HEADERS = {
       }
     } catch { /* helper not installed, or offline — the local record stands */ }
     return ids;
+  }
+
+  /* ---------- returning-participant lookup ----------
+     Looks a typed name up against past submissions via the crt_lookup_participant
+     RPC (see supabase_returning_users.sql). Returns null if the helper hasn't
+     been installed yet, the request fails, or nobody matches — every one of
+     those cases must leave the name field behaving exactly as it does today,
+     never a stuck spinner or a console error. */
+  async function lookupReturning(name) {
+    try {
+      const res = await fetch(`${REST_URL}/rpc/crt_lookup_participant`, {
+        method: 'POST',
+        headers: SUPA_HEADERS,
+        body: JSON.stringify({ p_name: name })
+      });
+      if (!res.ok) return null;              // RPC missing (SQL not run yet) or rejected
+      const rows = await res.json();
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (!row || !row.exists_flag) return null;
+      return {
+        canonicalName: row.canonical_name || name,
+        role: row.role || '',
+        ageGroup: row.age_group || '',
+        nextSuffix: Number(row.next_suffix) || 2
+      };
+    } catch { return null; }                 // offline, CORS, or any other network failure
   }
 
   async function prepareQueue() {
@@ -501,6 +532,21 @@ const SUPA_HEADERS = {
     setTimeout(tick, 420);
   }
 
+  /* Inline "welcome back" confirm shown under the name field once a lookup
+     resolves. Never auto-submits — it fills the fields and lets the
+     participant press Continue or Start themselves. */
+  function viewReturningConfirm() {
+    const r = state.returning;
+    if (!r || !r.exists) return '';   // nothing to show, or a name nobody has used before
+    return `<div class="name-confirm">
+      <p>Welcome back, <b>${esc(r.canonicalName)}</b> — continue where you left off?</p>
+      <div class="name-confirm-actions">
+        <button class="btn nextvid small" onclick="window.__act('namecontinue')">Continue ${icon('fwd', 14)}</button>
+        <button class="link-btn" onclick="window.__act('namedifferent')">I'm a different person with the same name</button>
+      </div>
+    </div>`;
+  }
+
   function viewLogin() {
     // The intro animation plays once per browser, not on every re-render
     // (a failed validation re-renders this view and replaying it would nag).
@@ -528,13 +574,25 @@ const SUPA_HEADERS = {
         </div>
         <div class="field">
           <label for="f-name">Name or initials</label>
-          <input id="f-name" placeholder="e.g. A.P. or Ann" autocomplete="off" maxlength="40">
+          <input id="f-name" placeholder="e.g. A.P. or Ann" autocomplete="off" maxlength="40"
+                 value="${esc(state.formName)}"
+                 oninput="window.__formInput('formName', this.value)"
+                 onblur="window.__act('namecheck')">
           <span class="field-hint">Part of your name or initials is enough — it only groups your responses.</span>
+          ${viewReturningConfirm()}
         </div>
         <div class="field"><label for="f-status">Professional role</label>
-          <select id="f-status"><option value="">Select…</option><option>Nurse</option><option>Doctor</option><option>Medical student</option><option>Paramedic</option><option>Researcher</option><option>Other</option></select></div>
+          <select id="f-status" onchange="window.__formInput('formStatus', this.value)">
+            <option value="">Select…</option>
+            ${['Nurse', 'Doctor', 'Medical student', 'Paramedic', 'Researcher', 'Other']
+              .map(o => `<option ${state.formStatus === o ? 'selected' : ''}>${o}</option>`).join('')}
+          </select></div>
         <div class="field"><label for="f-age">Age group</label>
-          <select id="f-age"><option value="">Select…</option><option>18-24</option><option>25-34</option><option>35-44</option><option>45-54</option><option>55+</option></select></div>
+          <select id="f-age" onchange="window.__formInput('formAge', this.value)">
+            <option value="">Select…</option>
+            ${['18-24', '25-34', '35-44', '45-54', '55+']
+              .map(o => `<option ${state.formAge === o ? 'selected' : ''}>${o}</option>`).join('')}
+          </select></div>
         <button class="btn block" onclick="window.__act('login')">Start</button>
         ${state.err ? `<div class="err">${esc(state.err)}</div>` : ''}
       </div>
@@ -1184,6 +1242,34 @@ const SUPA_HEADERS = {
   }
   document.addEventListener('keydown', onAboutKey, true);
 
+  // Keeps the sign-in form's fields in state on every keystroke, WITHOUT a
+  // render() — a full re-render would rebuild the <input> and drop the
+  // cursor position while someone is still typing. State only needs to be
+  // caught up before the next moment something ELSE causes a re-render (a
+  // validation error, the returning-participant confirm landing).
+  window.__formInput = function(field, value) { state[field] = value; };
+
+  /* Shared by the Start button and the "Continue" button on the returning-
+     participant confirm, so the two paths can never drift apart. */
+  async function doLogin(name, status, age) {
+    if (!name || !status) { state.err = 'Name and status are required.'; return render(); }
+    state.user = { name, status, age };
+    state.returning = null;
+    // A fresh order each sign-in, so two participants never march through
+    // the clips in step. The queue itself is assembled below.
+    state.orderSeed = newOrderSeed();
+    state.queueReady = false;
+    // Walk through the explainer while the queue is being put together;
+    // otherwise hold on a brief "preparing" card.
+    if (hasOnboarded(name)) { state.view = 'loading'; }
+    else { state.view = 'onboarding'; state.onboardPage = 0; }
+    render();
+    await prepareQueue();
+    // Don't yank someone out of the walkthrough just because the queue landed.
+    if (state.view === 'loading') state.view = nextView();
+    return render();
+  }
+
   /* ---------- actions ---------- */
   window.__act = async function(act, id) {
     state.msg = ''; state.err = '';
@@ -1193,23 +1279,54 @@ const SUPA_HEADERS = {
     if (act === 'aboutclose') { state.aboutOpen = false; return render(); }
 
     if (act === 'login') {
-      const name = document.getElementById('f-name').value.trim();
-      const status = document.getElementById('f-status').value;
-      const age = document.getElementById('f-age').value;
-      if (!name || !status) { state.err = 'Name and status are required.'; return render(); }
-      state.user = { name, status, age };
-      // A fresh order each sign-in, so two participants never march through
-      // the clips in step. The queue itself is assembled below.
-      state.orderSeed = newOrderSeed();
-      state.queueReady = false;
-      // Walk through the explainer while the queue is being put together;
-      // otherwise hold on a brief "preparing" card.
-      if (hasOnboarded(name)) { state.view = 'loading'; }
-      else { state.view = 'onboarding'; state.onboardPage = 0; }
-      render();
-      await prepareQueue();
-      // Don't yank someone out of the walkthrough just because the queue landed.
-      if (state.view === 'loading') state.view = nextView();
+      return doLogin(state.formName.trim(), state.formStatus, state.formAge);
+    }
+
+    /* ---------- returning-participant lookup ----------
+       Fires on the name field losing focus. Degrades to a total no-op
+       (no confirm, no error) if the RPC isn't installed yet or the
+       request fails — see lookupReturning(). Never auto-submits.
+
+       Blur is not only caused by tabbing away — clicking the Start button
+       ALSO blurs the name field, as the first half of that same click. If
+       this handler called render() synchronously here (before the network
+       request), it would rebuild the whole login view — Start button
+       included — in the middle of that click, and the browser drops a
+       click whose mousedown and mouseup/click land on two different DOM
+       nodes. So nothing touches the DOM until the lookup has actually
+       resolved; by then any click that caused this blur has already been
+       fully dispatched and handled. */
+    if (act === 'namecheck') {
+      const typed = state.formName.trim();
+      if (!typed) { state.returning = null; return; }
+      // Already resolved for this exact text (e.g. blurring twice without
+      // retyping) — nothing new to look up or show.
+      if (state.returning && state.returning.forName === typed) return;
+      const found = await lookupReturning(typed);
+      // Stale by the time it resolved — the text changed again, or the
+      // participant already moved past the login screen entirely.
+      if (state.formName.trim() !== typed || state.view !== 'login') return;
+      state.returning = found ? { forName: typed, exists: true, ...found } : null;
+      return render();
+    }
+    if (act === 'namecontinue') {
+      const r = state.returning;
+      if (!r || !r.exists) return;
+      state.formName = r.canonicalName;
+      state.formStatus = r.role;
+      state.formAge = r.ageGroup;
+      state.returning = null;
+      // The confirm's Continue doubles as Start — the participant already
+      // said "yes, that's me", so there's nothing left to fill in.
+      return doLogin(r.canonicalName, r.role, r.ageGroup);
+    }
+    if (act === 'namedifferent') {
+      const r = state.returning;
+      if (!r) return;
+      // A distinct stored name, so this person's marks are never merged with
+      // — or blocked by — the other participant who already used this name.
+      state.formName = `${r.forName} (${r.nextSuffix})`;
+      state.returning = null;
       return render();
     }
     if (act === 'onboardnext') { state.onboardPage = Math.min(ONBOARD_PAGES.length - 1, (state.onboardPage || 0) + 1); return render(); }
@@ -1219,6 +1336,7 @@ const SUPA_HEADERS = {
     if (act === 'logout') {
       state.user = null; state.view = 'login'; state.marked = null;
       state.queue = []; state.qIndex = 0; state.queueReady = false;
+      state.formName = ''; state.formStatus = ''; state.formAge = ''; state.returning = null;
       stopClock();
       try { localStorage.removeItem(SESSION_KEY); } catch {}
       return render();
