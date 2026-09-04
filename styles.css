@@ -345,6 +345,116 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   color: var(--muted);
 }
 
+/* ---- "Read more about this study" trigger ----
+   Kept to a single compact line rather than an always-open block, so the
+   full research details don't add height to the login page itself. */
+.about-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--teal);
+  cursor: pointer;
+}
+.about-more:hover { color: var(--teal-2); text-decoration: underline; }
+.about-more .ic { transition: transform .15s; }
+.about-more:hover .ic { transform: translateX(2px); }
+
+/* ---- About / research-details modal ---- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 10, 12, .6);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+  animation: modalFade .18s ease both;
+}
+.modal-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: clamp(22px, 4vw, 32px);
+  max-width: 540px;
+  width: 100%;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  animation: modalRise .22s cubic-bezier(.22,.8,.3,1) both;
+}
+.modal-close {
+  position: absolute;
+  top: 14px; right: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.modal-close:hover { background: var(--pulse-soft); color: var(--pulse); }
+.modal-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(19px, 2.6vw, 23px);
+  line-height: 1.25;
+  margin: 6px 26px 12px 0;
+}
+.modal-lede {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  margin: 0 0 20px;
+}
+.about-facts {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.about-facts > div { display: grid; gap: 2px; }
+.about-facts dt {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.about-facts dd {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+  /* Placeholder text is visibly a placeholder, not mistaken for a real name. */
+  font-style: italic;
+}
+.modal-card .about-note { margin-bottom: 18px; }
+
+@keyframes modalFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalRise { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop, .modal-card { animation: none !important; }
+}
+
+@media (max-width: 520px) {
+  .modal-card { padding: 20px 18px; border-radius: 12px; }
+  .about-facts { padding: 13px; gap: 10px; }
+}
+
 /* ---- Intro animation: plays once, then the page renders settled ---- */
 @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @keyframes quoteIn { from { opacity: 0; transform: translateY(8px) scale(.6); } to { opacity: .5; transform: none; } }
