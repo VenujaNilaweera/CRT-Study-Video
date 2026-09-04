@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=15">
+<link rel="stylesheet" href="styles.css?v=16">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -99,6 +99,7 @@ const SUPA_HEADERS = {
   let state = {
     view: 'login', user: null, marked: null, saving: false, msg: '', err: '', speed: 1,
     onboardPage: 0,
+    aboutOpen: false,    // the "Read more about this study" panel, overlaid on login
     libraryError: '',    // why the clip library is empty, if it is
     orderSeed: null,     // seeds the tie-break shuffle in the serving queue
     queue: [],           // this participant's clips, in the order they'll see them
@@ -327,6 +328,7 @@ const SUPA_HEADERS = {
     folder:'<path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4.9a2 2 0 0 1 1.7.9l.9 1.4a2 2 0 0 0 1.7.9H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2z"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
     dot:   '<circle cx="12" cy="12" r="7" fill="currentColor" stroke="none"/>',
+    close: '<path d="M18 6 6 18M6 6l12 12"/>',
   };
   // size: px. Stroke width scales down a little on big icons so weight looks even.
   function icon(name, size = 17) {
@@ -560,8 +562,45 @@ const SUPA_HEADERS = {
           </div>
 
           <p class="about-foot">Saves automatically · Works on a phone</p>
+          <button class="about-more" onclick="window.__act('about')">Read more about this study ${icon('fwd', 13)}</button>
         </div>
       </aside>
+    </div>${state.aboutOpen ? viewAboutModal() : ''}`;
+  }
+
+  /* =========================================================================
+     ABOUT / RESEARCH-DETAILS MODAL
+     A compact "Read more" trigger on the login page opens this, rather than
+     an always-open block, so the full research details don't push the
+     opening page (title, intro, form) below the fold. The identifying
+     details below are placeholders — this app has no way to know the real
+     supervisor, researcher, or institution names, and must never invent
+     them. Replace every [bracketed] placeholder with the real text.
+     ========================================================================= */
+  function viewAboutModal() {
+    return `<div class="modal-backdrop" onclick="if(event.target===this) window.__act('aboutclose')">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
+        <button class="modal-close" onclick="window.__act('aboutclose')" aria-label="Close">${icon('close', 18)}</button>
+        <span class="about-eyebrow">About this research</span>
+        <h2 id="about-modal-title" class="modal-title">Capillary Refill Time (CRT) Visual Assessment Study</h2>
+        <p class="modal-lede">This study investigates how people judge capillary refill by eye. Participants watch short clips of a nail bed being pressed and released, and mark the moment they see the colour return — those marks measure how much that judgement varies from one observer to the next, and how it compares to the frame-accurate release point recorded in each clip.</p>
+
+        <!-- TODO(Venuja): replace these placeholders with the real study / supervisor / institution details -->
+        <dl class="about-facts">
+          <div><dt>Principal investigator</dt><dd>[Principal investigator name]</dd></div>
+          <div><dt>Supervisor(s)</dt><dd>[Supervisor name(s)]</dd></div>
+          <div><dt>Research team</dt><dd>[Research team / co-investigator names]</dd></div>
+          <div><dt>Department / Institution</dt><dd>[Department, Faculty, and Institution name]</dd></div>
+          <div><dt>Ethics approval</dt><dd>[Ethics approval reference number]</dd></div>
+          <div><dt>Contact</dt><dd>[Contact email address]</dd></div>
+        </dl>
+
+        <div class="about-note">
+          <b>No full names.</b> Initials are enough — they only group your own responses. No patient data is collected.
+        </div>
+
+        <button class="btn block" onclick="window.__act('aboutclose')">Close</button>
+      </div>
     </div>`;
   }
 
@@ -1138,11 +1177,20 @@ const SUPA_HEADERS = {
   }
   document.addEventListener('keydown', onOnboardKey, true);
 
+  /* Keyboard: Esc closes the About modal, wherever it's open from. */
+  function onAboutKey(e) {
+    if (!state.aboutOpen) return;
+    if (e.key === 'Escape') { e.preventDefault(); window.__act('aboutclose'); }
+  }
+  document.addEventListener('keydown', onAboutKey, true);
+
   /* ---------- actions ---------- */
   window.__act = async function(act, id) {
     state.msg = ''; state.err = '';
 
     if (act === 'theme') return toggleTheme();
+    if (act === 'about')      { state.aboutOpen = true;  return render(); }
+    if (act === 'aboutclose') { state.aboutOpen = false; return render(); }
 
     if (act === 'login') {
       const name = document.getElementById('f-name').value.trim();
