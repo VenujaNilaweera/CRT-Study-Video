@@ -310,6 +310,94 @@ const SUPA_HEADERS = {
     } catch { return null; }                 // offline, CORS, or any other network failure
   }
 
+  /* ---------- full-clip preload ----------
+     Clips used to stream straight from Supabase Storage, so a slow
+     connection could stutter mid-playback. Each clip is now fully fetched
+     into memory FIRST and played back from that local copy — see
+     attachVideoEvents() for where a clip's <video src> gets filled in once
+     this resolves. Held in memory only (a Blob + an object: URL); nothing
+     touches disk, and nothing needs a storage permission. */
+  const clipBlobCache = new Map();       // clip key -> blob: URL
+  const clipBlobOrder = [];              // clip keys, oldest use first
+  const clipFetchPromises = new Map();   // clip key -> in-flight Promise<url|null>
+  const CLIP_CACHE_LIMIT = 4;            // current clip + a couple prefetched + slack
+
+  // videoId (the Supabase row's UUID) uniquely identifies a clip; falls back
+  // to the local id for the rare case a clip has no DB row behind it.
+  function clipKey(c) { return (c && (c.videoId || c.id)) || null; }
+
+  // Marks a clip as just-used and evicts the LEAST recently used one once
+  // the cache is over its limit — except whatever is on screen right now,
+  // which must never be revoked out from under the <video> element.
+  function touchClipCache(key) {
+    const i = clipBlobOrder.indexOf(key);
+    if (i !== -1) clipBlobOrder.splice(i, 1);
+    clipBlobOrder.push(key);
+    while (clipBlobOrder.length > CLIP_CACHE_LIMIT) {
+      const evictKey = clipBlobOrder[0];
+      if (evictKey === clipKey(currentClip())) break;
+      clipBlobOrder.shift();
+      const url = clipBlobCache.get(evictKey);
+      if (url) { try { URL.revokeObjectURL(url); } catch {} }
+      clipBlobCache.delete(evictKey);
+    }
+  }
+
+  // Downloads one clip's .mp4 in full, reporting progress (0-99; the last
+  // 1% covers turning the bytes into a Blob) when the response carries a
+  // Content-Length. Degrades to an indeterminate download (no onProgress
+  // calls) when the server doesn't send one — still resolves once done.
+  function fetchClipBlob(url, onProgress) {
+    return fetch(url).then(res => {
+      if (!res.ok) throw new Error(`clip fetch failed (${res.status})`);
+      const total = Number(res.headers.get('Content-Length')) || 0;
+      if (!res.body || !total || !onProgress) return res.blob();
+      const reader = res.body.getReader();
+      const chunks = [];
+      let received = 0;
+      const pump = () => reader.read().then(({ done, value }) => {
+        if (done) return new Blob(chunks);
+        chunks.push(value);
+        received += value.length;
+        onProgress(Math.min(99, Math.round((received / total) * 100)));
+        return pump();
+      });
+      return pump();
+    }).then(blob => URL.createObjectURL(blob));
+  }
+
+  // Ensures `clip` has a cached, fully-downloaded blob: URL — reusing a
+  // cached one or an in-flight fetch already under way for it. NEVER
+  // rejects: resolves to null on any failure, so callers fall back to the
+  // clip's plain direct Storage URL and playback still works, just
+  // streamed the ordinary way instead of preloaded.
+  function ensureClipReady(clip, onProgress) {
+    const key = clipKey(clip);
+    if (!key) return Promise.resolve(null);
+    if (clipBlobCache.has(key)) { touchClipCache(key); return Promise.resolve(clipBlobCache.get(key)); }
+    let p = clipFetchPromises.get(key);
+    if (!p) {
+      p = fetchClipBlob(clip.url, onProgress)
+        .then(url => { clipBlobCache.set(key, url); touchClipCache(key); return url; })
+        .catch(() => null)
+        .finally(() => clipFetchPromises.delete(key));
+      clipFetchPromises.set(key, p);
+    }
+    return p;
+  }
+
+  // Quietly warms the cache for the next couple of clips in the queue, so
+  // they're often already local by the time the participant reaches them.
+  // Fire-and-forget and best-effort — never awaited, never delays the
+  // CURRENT clip's own load.
+  function prefetchAhead() {
+    for (let i = state.qIndex + 1; i < Math.min(state.qIndex + 3, state.queue.length); i++) {
+      const c = state.queue[i];
+      const key = clipKey(c);
+      if (c && key && !clipBlobCache.has(key) && !clipFetchPromises.has(key)) ensureClipReady(c);
+    }
+  }
+
   async function prepareQueue() {
     try { await discovery; } catch {}
     const seen = state.user ? await fetchSeen(state.user.name) : new Set();
@@ -866,6 +954,12 @@ const SUPA_HEADERS = {
     const total = setTotal();
     const isLastOfSet = doneHere + 1 >= total;
     const pct = Math.round((doneHere / total) * 100);
+    // Already fully downloaded (a prefetch got here first)? Play straight
+    // from that local copy. Otherwise leave src OUT of the tag entirely —
+    // not src="" — an empty src attribute makes some browsers try to load
+    // the page itself as a video. attachVideoEvents() fills the real src in
+    // once the download resolves (or falls back to v.url on failure).
+    const cachedSrc = clipBlobCache.get(clipKey(v));
 
     /* The counter is the whole progress story now: no collections, no clip
        list — just "how far through this run am I". */
@@ -881,11 +975,12 @@ const SUPA_HEADERS = {
       <div class="player-layout">
         <div class="video-panel">
           <div class="vid-stage">
-            <video id="vid" src="${esc(v.url)}" playsinline preload="auto"
+            <video id="vid" ${cachedSrc ? `src="${esc(cachedSrc)}"` : ''} playsinline preload="auto"
                    disablepictureinpicture controlslist="nodownload noremoteplayback"
                    oncontextmenu="return false" draggable="false"
                    onclick="window.__act('playpause')"></video>
-            <div class="vid-loading" id="vidLoading"><span class="spin"></span> Buffering clip…</div>
+            <div class="vid-loading" id="vidLoading"><span class="spin"></span>
+              <span id="vidLoadingText">${cachedSrc ? 'Buffering clip…' : 'Loading clip…'}</span></div>
             ${watermarkHtml()}
           </div>
           <div class="scrub-row">
@@ -1109,6 +1204,30 @@ const SUPA_HEADERS = {
       ro.observe(vid);
     }
     window.addEventListener('resize', fitWatermark);
+
+    // ---- full-clip preload ----
+    // viewPlayer() leaves src OUT of the tag entirely when this clip hasn't
+    // been fully downloaded yet (see clipBlobCache there). Fill it in once
+    // the download resolves — or, on any failure, fall back to the clip's
+    // ordinary direct Storage URL, so a broken or slow preload never leaves
+    // playback stuck. The clipKey() check guards against a stale resolution
+    // landing after the participant has already moved to a different clip
+    // (Skip clip included) — nothing here blocks or waits on that.
+    if (v0 && !vid.hasAttribute('src')) {
+      const key = clipKey(v0);
+      const textEl = document.getElementById('vidLoadingText');
+      ensureClipReady(v0, pct => { if (textEl) textEl.textContent = `Loading clip… ${pct}%`; })
+        .then(url => {
+          if (clipKey(currentClip()) !== key) return;   // moved on already
+          const nowVid = document.getElementById('vid');
+          if (!nowVid) return;
+          const nowText = document.getElementById('vidLoadingText');
+          if (nowText) nowText.textContent = 'Buffering clip…';
+          nowVid.src = url || v0.url;   // the cached blob, or a plain streamed fallback
+          nowVid.load();
+        });
+    }
+    prefetchAhead();
 
     vid.load();
 
