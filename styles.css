@@ -199,15 +199,23 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
 .login-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 26px;
+  gap: 22px;
   align-items: start;
   max-width: 1000px;
-  margin: 12px auto;
+  margin: 4px auto;
 }
 .login-card { margin: 0; }
 /* Subordinate to the study title above it — this is a form label, not a
    second headline competing with the name of the study. */
-.login-card .page-head h2 { font-size: clamp(17px, 2.4vw, 20px); }
+.login-card .page-head h2 { font-size: clamp(15.5px, 2vw, 17px); }
+.login-card .page-head { margin-bottom: 10px; }
+/* Trims the login page specifically (not every card sitewide — the player
+   and other views keep their normal padding/spacing) so the title, intro,
+   and the Start button all fit a 1366x768 laptop screen without scrolling. */
+body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
+.login-card.card { padding: clamp(16px, 3vw, 22px); }
+.login-card .field { margin-bottom: 11px; }
+.about-panel { padding: clamp(16px, 2.4vw, 22px); }
 
 /* ---- Study title + one-paragraph introduction ----
    Spans the full grid so it is read BEFORE either column: the study is named,
@@ -224,22 +232,26 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   letter-spacing: 1.7px;
   text-transform: uppercase;
   color: var(--teal);
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 .hero-title {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: clamp(23px, 4.4vw, 38px);
-  line-height: 1.15;
-  letter-spacing: -0.6px;
+  /* Capped lower than a typical hero (was 38px): this sits above a form the
+     participant still has to fill in and submit, so it should read as a
+     clear page title, not claim the vertical space a full splash headline
+     would — that space is what pushed the Start button below the fold. */
+  font-size: clamp(21px, 3vw, 28px);
+  line-height: 1.18;
+  letter-spacing: -0.4px;
   font-weight: 700;
   color: var(--ink);
-  margin: 0 0 12px;
+  margin: 0 0 8px;
   /* Keeps "(CRT)" from being stranded alone on a line of its own. */
   text-wrap: balance;
 }
 .hero-lede {
-  font-size: clamp(14.5px, 1.6vw, 16.5px);
-  line-height: 1.65;
+  font-size: clamp(13.5px, 1.4vw, 15px);
+  line-height: 1.55;
   color: var(--ink-2);
   margin: 0;
   max-width: 68ch;
