@@ -192,6 +192,27 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   color: var(--muted);
 }
 
+/* ---- Returning-participant confirm ----
+   Appears under the name field once a blur-triggered lookup resolves.
+   Degrades to nothing at all when the lookup fails or isn't installed. */
+.name-confirm {
+  margin-top: 9px;
+  padding: 11px 13px;
+  background: var(--teal-soft);
+  border: 1px solid var(--teal);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.name-confirm p { margin: 0 0 9px; color: var(--ink); line-height: 1.5; }
+.name-confirm-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.link-btn {
+  background: none; border: none; padding: 0;
+  font-family: 'Inter', sans-serif; font-size: 12.5px; font-weight: 600;
+  color: var(--muted); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.link-btn:hover { color: var(--ink); }
+
 /* ==========================================================================
    Login screen: sign-in card + "About this research" panel.
    Desktop puts the panel to the RIGHT of the form; phones stack it BELOW.
