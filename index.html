@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=17">
+<link rel="stylesheet" href="styles.css?v=19">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -25,6 +25,10 @@
 </head>
 <body>
 <div class="hdr">
+  <button class="menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false"
+          onclick="window.__act('drawer')">
+    <span></span><span></span><span></span>
+  </button>
   <div class="brand">
     <div class="dot"></div>
     <div>
@@ -34,6 +38,7 @@
   </div>
   <div class="actions" id="hdrActions"></div>
 </div>
+<div id="drawerRoot"></div>
 
 <div class="wrap" id="app"></div>
 
@@ -99,7 +104,10 @@ const SUPA_HEADERS = {
   let state = {
     view: 'login', user: null, marked: null, saving: false, msg: '', err: '', speed: 1,
     onboardPage: 0,
-    aboutOpen: false,    // the "Read more about this study" panel, overlaid on login
+    drawerOpen: false,   // the ☰ side menu
+    aboutReturn: null,   // the view to come back to when leaving the About page
+    // Feedback form (About page)
+    fbText: '', fbEmail: '', fbSending: false, fbSent: false, fbGaveEmail: false, fbErr: '',
     // The sign-in form's own fields, held in state (not just the DOM) so a
     // re-render — a failed validation, or the returning-participant lookup
     // landing — never wipes what someone already typed.
@@ -308,6 +316,52 @@ const SUPA_HEADERS = {
         nextSuffix: Number(row.next_suffix) || 2
       };
     } catch { return null; }                 // offline, CORS, or any other network failure
+  }
+
+  /* =========================================================================
+     FEEDBACK DELIVERY
+
+     This is a static site (GitHub Pages) with no server of its own, so the
+     feedback form posts to FormSubmit, which forwards it as an email.
+
+     TWO THINGS TO KNOW:
+     1. The FIRST message sent through this triggers a one-time confirmation
+        email from FormSubmit to the address below. Until that link is
+        clicked, nothing is delivered.
+     2. The address below is visible in this file's source, so scrapers can
+        read it. To hide it, send one message, then take the alias FormSubmit
+        emails you (it looks like formsubmit.co/ajax/xxxxxxxxxxxx) and put
+        that in FEEDBACK_ENDPOINT instead of the plain address.
+
+     If the request fails for any reason the form offers a plain mailto:
+     link instead, so feedback is never simply lost.
+     ========================================================================= */
+  const FEEDBACK_TO = 'nilaweeravenujamsi@gmail.com';
+  const FEEDBACK_ENDPOINT = `https://formsubmit.co/ajax/${FEEDBACK_TO}`;
+  const FEEDBACK_SUBJECT = 'CRT feedback';
+
+  function mailtoFallback() {
+    const body = encodeURIComponent(state.fbText || '');
+    return `mailto:${FEEDBACK_TO}?subject=${encodeURIComponent(FEEDBACK_SUBJECT)}&body=${body}`;
+  }
+
+  async function sendFeedback(message, replyTo) {
+    const res = await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        _subject: FEEDBACK_SUBJECT,
+        _template: 'table',
+        message,
+        // Only sent when they actually asked for a reply; FormSubmit uses
+        // _replyto as the Reply-To header so hitting reply just works.
+        ...(replyTo ? { _replyto: replyTo, email: replyTo } : {}),
+        page: location.href,
+        participant: (state.user && state.user.name) || '(not signed in)'
+      })
+    });
+    if (!res.ok) throw new Error(`Feedback service returned ${res.status}`);
+    return true;
   }
 
   /* ---------- full-clip preload ----------
@@ -538,7 +592,9 @@ const SUPA_HEADERS = {
     else if (state.view === 'nolibrary') html = viewLibraryUnavailable();
     else if (state.view === 'paused') html = viewPaused();
     else if (state.view === 'player') html = viewPlayer();
+    else if (state.view === 'about') html = viewAbout();
     app.innerHTML = html;
+    renderDrawer();
 
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
 
@@ -568,6 +624,19 @@ const SUPA_HEADERS = {
   }
   window.addEventListener('popstate', () => {
     if (!backTrapPrimed) return;               // trap not armed yet — let it be
+    // The drawer and the About page are the first things Back should undo —
+    // on a phone, Back is how people expect to close a menu or leave a
+    // sub-page, not how they expect to leave the site.
+    if (state.drawerOpen) {
+      state.drawerOpen = false; renderDrawer();
+      try { history.pushState({ crtTrap: 1 }, ''); } catch {}
+      return;
+    }
+    if (state.view === 'about') {
+      window.__act('aboutback');
+      try { history.pushState({ crtTrap: 1 }, ''); } catch {}
+      return;
+    }
     if (state.view === 'player') {
       // There is no list to climb back to any more, so Back pauses the run —
       // which is also the one place that offers a deliberate way out.
@@ -711,43 +780,171 @@ const SUPA_HEADERS = {
           <button class="about-more" onclick="window.__act('about')">Read more about this study ${icon('fwd', 13)}</button>
         </div>
       </aside>
-    </div>${state.aboutOpen ? viewAboutModal() : ''}`;
+    </div>`;
   }
 
   /* =========================================================================
-     ABOUT / RESEARCH-DETAILS MODAL
-     A compact "Read more" trigger on the login page opens this, rather than
-     an always-open block, so the full research details don't push the
-     opening page (title, intro, form) below the fold. The identifying
-     details below are placeholders — this app has no way to know the real
-     supervisor, researcher, or institution names, and must never invent
-     them. Replace every [bracketed] placeholder with the real text.
+     SIDE DRAWER
+     The ☰ button in the header opens this. Rendered into its own root
+     outside #app so it survives every view change and overlays the header
+     too — the drawer is site navigation, not part of any one screen.
      ========================================================================= */
-  function viewAboutModal() {
-    return `<div class="modal-backdrop" onclick="if(event.target===this) window.__act('aboutclose')">
-      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
-        <button class="modal-close" onclick="window.__act('aboutclose')" aria-label="Close">${icon('close', 18)}</button>
-        <span class="about-eyebrow">About this research</span>
-        <h2 id="about-modal-title" class="modal-title">Capillary Refill Time (CRT) Visual Assessment Study</h2>
-        <p class="modal-lede">This study investigates how people judge capillary refill by eye. Participants watch short clips of a nail bed being pressed and released, and mark the moment they see the colour return — those marks measure how much that judgement varies from one observer to the next, and how it compares to the frame-accurate release point recorded in each clip.</p>
+  function renderDrawer() {
+    const root = document.getElementById('drawerRoot');
+    const btn = document.getElementById('menuBtn');
+    if (btn) btn.setAttribute('aria-expanded', state.drawerOpen ? 'true' : 'false');
+    if (!root) return;
+    if (!state.drawerOpen) { root.innerHTML = ''; return; }
+    const onAbout = state.view === 'about';
+    root.innerHTML = `
+      <div class="drawer-backdrop" onclick="window.__act('drawerclose')"></div>
+      <nav class="drawer" role="dialog" aria-modal="true" aria-label="Menu">
+        <div class="drawer-head">
+          <span class="drawer-title">Menu</span>
+          <button class="drawer-close" onclick="window.__act('drawerclose')" aria-label="Close menu">${icon('close', 18)}</button>
+        </div>
+        <button class="drawer-link ${onAbout ? '' : 'active'}" onclick="window.__act('drawerhome')">
+          ${icon('dot', 13)} <span>The study</span>
+        </button>
+        <button class="drawer-link ${onAbout ? 'active' : ''}" onclick="window.__act('about')">
+          ${icon('folder', 15)} <span>About this research</span>
+        </button>
+        <button class="drawer-link" onclick="window.__act('aboutfeedback')">
+          ${icon('fwd', 15)} <span>Send feedback</span>
+        </button>
+        <div class="drawer-foot">
+          <button class="drawer-link small" onclick="window.__act('theme')">
+            ${icon(currentTheme() === 'dark' ? 'sun' : 'moon', 15)}
+            <span>${currentTheme() === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+          </button>
+        </div>
+      </nav>`;
+  }
 
-        <!-- TODO(Venuja): replace these placeholders with the real study / supervisor / institution details -->
+  /* =========================================================================
+     ABOUT PAGE  (full screen)
+
+     Everything factual here describes the study itself and is safe to state.
+     Everything IDENTIFYING — names, institution, ethics number, contact — is
+     a [bracketed] placeholder, because this app has no way to know those and
+     must never invent them.
+
+     TODO(Venuja): replace every [bracketed] placeholder below with the real
+     details, and drop your photos into assets/ as about-1.jpg, about-2.jpg,
+     about-3.jpg. Any photo you haven't added yet shows a tidy empty frame
+     instead of a broken image, so it's safe to add them one at a time.
+     ========================================================================= */
+  function aboutPhoto(file, caption) {
+    return `<figure class="about-photo">
+      <img src="assets/${file}" alt="${esc(caption)}" loading="lazy"
+           onerror="this.closest('.about-photo').classList.add('missing')">
+      <figcaption>${esc(caption)}</figcaption>
+    </figure>`;
+  }
+
+  function viewAbout() {
+    return `<div class="about-page">
+      <div class="about-top">
+        <button class="btn neutral" onclick="window.__act('aboutback')">${icon('back', 16)} Back to the study</button>
+      </div>
+
+      <header class="about-hero">
+        <span class="hero-eyebrow">About this research</span>
+        <h2 class="about-h1">Capillary Refill Time (CRT) Visual Assessment Study</h2>
+        <p class="about-lede">Capillary refill time is one of the fastest bedside checks in medicine — press a nail bed, let go, and count how long the colour takes to come back. It is also one of the most subjective. This study measures precisely how much that judgement varies from one observer to the next.</p>
+      </header>
+
+      <section class="about-sec">
+        <h3>What we are studying</h3>
+        <p>Two clinicians can watch the very same refill and read two different times. That disagreement matters, because capillary refill feeds into decisions about circulation and shock — and yet "how long is too long" rests on an eye, a stopwatch, and a judgement call made in a second or two.</p>
+        <p>We are measuring that variation directly. Every clip in this study is a real recording with a frame-accurate record of the exact moment pressure was released. When you mark the moment colour returns, your mark can be compared both to other observers' marks and to that ground truth, frame by frame.</p>
+      </section>
+
+      <section class="about-sec">
+        <h3>How the study works</h3>
+        <ol class="about-steps-list">
+          <li><b>You watch a short clip.</b> A nail bed is pressed, then released. The screen flashes green for a moment at the exact instant of release — that is when timing starts.</li>
+          <li><b>You mark the moment colour returns.</b> One button. There is nothing to time yourself and nothing to calculate.</li>
+          <li><b>Clips come to you in sets of ${SET_SIZE}.</b> Nothing to choose, nothing repeated, and you can stop after any set.</li>
+        </ol>
+        <p class="about-quiet">Clips are served least-annotated-first, so every recording in the library collects a comparable number of judgements rather than the first few taking them all.</p>
+      </section>
+
+      <section class="about-sec">
+        <h3>The team</h3>
+        <!-- TODO(Venuja): replace these placeholders with the real names -->
         <dl class="about-facts">
           <div><dt>Principal investigator</dt><dd>[Principal investigator name]</dd></div>
           <div><dt>Supervisor(s)</dt><dd>[Supervisor name(s)]</dd></div>
           <div><dt>Research team</dt><dd>[Research team / co-investigator names]</dd></div>
           <div><dt>Department / Institution</dt><dd>[Department, Faculty, and Institution name]</dd></div>
+        </dl>
+        <!-- TODO(Venuja): add assets/about-1.jpg, about-2.jpg, about-3.jpg -->
+        <div class="about-photos">
+          ${aboutPhoto('about-1.jpg', 'The research team')}
+          ${aboutPhoto('about-2.jpg', 'Recording a capillary refill test')}
+          ${aboutPhoto('about-3.jpg', 'The department')}
+        </div>
+      </section>
+
+      <section class="about-sec">
+        <h3>Ethics, privacy and your data</h3>
+        <dl class="about-facts">
           <div><dt>Ethics approval</dt><dd>[Ethics approval reference number]</dd></div>
           <div><dt>Contact</dt><dd>[Contact email address]</dd></div>
         </dl>
+        <ul class="about-bullets">
+          <li><b>No full names.</b> Initials are enough — they exist only to group your own responses together so repeated clips are never shown to you twice.</li>
+          <li><b>No patient data.</b> The recordings show a nail bed and nothing that identifies anybody.</li>
+          <li><b>What is stored.</b> Your initials, professional role, age band, and the timing of each mark you make.</li>
+          <li><b>Taking part is voluntary.</b> You can stop after any set, and you are never obliged to finish.</li>
+        </ul>
+      </section>
 
-        <div class="about-note">
-          <b>No full names.</b> Initials are enough — they only group your own responses. No patient data is collected.
-        </div>
+      <section class="about-sec" id="feedback">
+        <h3>Send us feedback</h3>
+        <p>Found something confusing, something broken, or have a thought about the study? Tell us — it comes straight to the research team.</p>
+        ${viewFeedbackForm()}
+      </section>
 
-        <button class="btn block" onclick="window.__act('aboutclose')">Close</button>
+      <div class="about-bottom">
+        <button class="btn nextvid block" onclick="window.__act('aboutback')">Back to the study ${icon('fwd', 16)}</button>
       </div>
     </div>`;
+  }
+
+  function viewFeedbackForm() {
+    if (state.fbSent) {
+      return `<div class="fb-done">
+        <div class="run-tick">${icon('check', 22)}</div>
+        <p><b>Thank you — your feedback has been sent.</b></p>
+        <p class="muted">${state.fbGaveEmail
+          ? 'We have your email address and will get back to you.'
+          : 'You did not leave an email address, so there is nothing to reply to — which is completely fine.'}</p>
+        <button class="btn neutral" onclick="window.__act('fbagain')">Send another</button>
+      </div>`;
+    }
+    return `<form class="fb-form" onsubmit="window.__act('fbsend'); return false;">
+      <div class="field">
+        <label for="fb-msg">Your feedback</label>
+        <textarea id="fb-msg" rows="5" maxlength="4000" required
+                  placeholder="What did you notice? What could be clearer?"
+                  oninput="window.__formInput('fbText', this.value)">${esc(state.fbText)}</textarea>
+      </div>
+      <div class="field">
+        <label for="fb-email">Your email <span class="opt">— optional</span></label>
+        <input id="fb-email" type="email" maxlength="120" autocomplete="email"
+               placeholder="only if you would like a reply"
+               value="${esc(state.fbEmail)}"
+               oninput="window.__formInput('fbEmail', this.value)">
+        <span class="field-hint">Leave this blank if you don't want a response — your feedback still reaches us.</span>
+      </div>
+      <button class="btn block" type="submit" ${state.fbSending ? 'disabled' : ''}>
+        ${state.fbSending ? 'Sending…' : 'Send feedback'}
+      </button>
+      ${state.fbErr ? `<div class="err">${esc(state.fbErr)}
+        <a href="${esc(mailtoFallback())}">Send it by email instead</a></div>` : ''}
+    </form>`;
   }
 
   /* =========================================================================
@@ -1354,10 +1551,11 @@ const SUPA_HEADERS = {
   }
   document.addEventListener('keydown', onOnboardKey, true);
 
-  /* Keyboard: Esc closes the About modal, wherever it's open from. */
+  /* Keyboard: Esc closes the drawer, then (from the About page) goes back. */
   function onAboutKey(e) {
-    if (!state.aboutOpen) return;
-    if (e.key === 'Escape') { e.preventDefault(); window.__act('aboutclose'); }
+    if (e.key !== 'Escape') return;
+    if (state.drawerOpen) { e.preventDefault(); return window.__act('drawerclose'); }
+    if (state.view === 'about') { e.preventDefault(); return window.__act('aboutback'); }
   }
   document.addEventListener('keydown', onAboutKey, true);
 
@@ -1394,8 +1592,59 @@ const SUPA_HEADERS = {
     state.msg = ''; state.err = '';
 
     if (act === 'theme') return toggleTheme();
-    if (act === 'about')      { state.aboutOpen = true;  return render(); }
-    if (act === 'aboutclose') { state.aboutOpen = false; return render(); }
+    /* ---------- drawer + About page ---------- */
+    if (act === 'drawer')      { state.drawerOpen = !state.drawerOpen; return renderDrawer(); }
+    if (act === 'drawerclose') { state.drawerOpen = false; return renderDrawer(); }
+    if (act === 'drawerhome')  {
+      state.drawerOpen = false;
+      if (state.view === 'about') return window.__act('aboutback');
+      return renderDrawer();
+    }
+    if (act === 'about' || act === 'aboutfeedback') {
+      state.drawerOpen = false;
+      if (state.view !== 'about') {
+        // Remember where they were so Back returns them to the same place,
+        // mid-run included.
+        state.aboutReturn = state.view;
+        state.view = 'about';
+      }
+      render();
+      if (act === 'aboutfeedback') {
+        document.getElementById('feedback')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        window.scrollTo({ top: 0 });
+      }
+      return;
+    }
+    if (act === 'aboutback') {
+      state.drawerOpen = false;
+      state.view = state.aboutReturn || (state.user ? nextView() : 'login');
+      state.aboutReturn = null;
+      return render();
+    }
+
+    /* ---------- feedback ---------- */
+    if (act === 'fbagain') {
+      state.fbSent = false; state.fbErr = ''; state.fbText = ''; state.fbEmail = '';
+      return render();
+    }
+    if (act === 'fbsend') {
+      if (state.fbSending) return;
+      const msg = (state.fbText || '').trim();
+      const replyTo = (state.fbEmail || '').trim();
+      if (!msg) { state.fbErr = 'Please write your feedback first.'; return render(); }
+      state.fbSending = true; state.fbErr = ''; render();
+      try {
+        await sendFeedback(msg, replyTo);
+        state.fbSent = true;
+        state.fbGaveEmail = !!replyTo;
+        state.fbText = ''; state.fbEmail = '';
+      } catch (e) {
+        state.fbErr = 'That didn’t go through.';
+      }
+      state.fbSending = false;
+      return render();
+    }
 
     if (act === 'login') {
       return doLogin(state.formName.trim(), state.formStatus, state.formAge);
