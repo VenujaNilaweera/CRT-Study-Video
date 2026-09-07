@@ -584,6 +584,14 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 }
 .fb-done p { margin-bottom: 8px; font-size: 14.5px; }
 .fb-done .run-tick { margin: 0 auto 12px; }
+.about-credit {
+  margin: 34px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--muted);
+  text-align: center;
+}
 .about-bottom { margin-top: 28px; }
 
 @media (prefers-reduced-motion: reduce) {
