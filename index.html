@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=20">
+<link rel="stylesheet" href="styles.css?v=23">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -1141,15 +1141,26 @@ const SUPA_HEADERS = {
      from. Sits INSIDE the picture, styled like a burned-in camera caption, so
      a crop of just the video still carries it. Kept to the corners at low
      opacity on purpose — this is a colour perception study, so the nail bed in
-     the middle of the frame must stay completely unobstructed. */
+     the middle of the frame must stay completely unobstructed.
+
+     Two different tags in two different corner-pairs: WHO is watching
+     (top-left/bottom-right) and WHICH clip this is (top-right/bottom-left —
+     collection + title, the same names studio.py organizes uploads by). A
+     participant's Flag/Skip report already emails the clip's id; this puts
+     the same identity ON the picture itself, so a screenshot of a broken
+     clip is enough on its own to go find and replace the right file. */
   function watermarkHtml() {
     if (!state.user) return '';
     const who = `${state.user.name} · ${state.user.status}`;
     const when = new Date().toISOString().slice(0, 10);
-    const tag = esc(`${who} · ${when}`);
+    const whoTag = esc(`${who} · ${when}`);
+    const v = currentClip();
+    const clipTag = v ? esc(`${v.collectionName || ''} · ${v.title || ''}`.replace(/^ · | · $/, '')) : '';
     return `<div class="wmark" id="wmark" aria-hidden="true">
-      <span class="wm tl">${tag}</span>
-      <span class="wm br">${tag}</span>
+      <span class="wm tl">${whoTag}</span>
+      <span class="wm br">${whoTag}</span>
+      <span class="wm tr">${clipTag}</span>
+      <span class="wm bl">${clipTag}</span>
     </div>`;
   }
 
@@ -1233,12 +1244,12 @@ const SUPA_HEADERS = {
                   title="Saves your mark, then moves on (N)"
                   onclick="window.__act('submit')">${isLastOfSet ? `Save &amp; finish set ${icon('check', 16)}` : `Save &amp; Next clip ${icon('fwd', 16)}`}</button>
           <div id="markPanel">${markPanelHtml()}</div>
-          <div id="flagPanel" class="flag-row">${flagPanelHtml()}</div>
           <div class="nav-row">
             <button class="btn neutral" onclick="window.__act('restart')">${icon('retry', 16)} Restart clip</button>
             <button class="btn neutral" title="This clip won't play? Move on without saving a mark"
                     onclick="window.__act('skip')">Skip clip ${icon('fwd', 16)}</button>
           </div>
+          <div id="flagPanel" class="flag-row">${flagPanelHtml()}</div>
           <div class="shortcuts">
             <span><kbd>Space</kbd> play / pause</span>
             <span><kbd>←</kbd><kbd>→</kbd> step 1 frame</span>

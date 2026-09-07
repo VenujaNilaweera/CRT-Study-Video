@@ -1345,9 +1345,8 @@ body[data-view="player"] .run-bar { flex: none; }
   background: var(--surface-2);
 }
 
-/* Sits above Restart/Skip — a quiet, one-click "this clip is broken" report,
+/* Sits below Restart/Skip — a quiet, one-click "this clip is broken" report,
    deliberately understated so it never competes with Save & Next. */
-.flag-row { margin-bottom: 10px; }
 .flag-row .flag-btn {
   width: 100%;
   justify-content: center;
@@ -1405,13 +1404,24 @@ body[data-view="player"] .run-bar { flex: none; }
      0 0 3px rgba(255,255,255,.22);
   user-select: none;
   mix-blend-mode: multiply;
+  /* A long collection name or clip title must truncate, never overflow
+     into the tag sharing its row — max-width is a % of the video rect
+     itself (.wmark is sized to it by fitWatermark()), so the two tags on
+     one row can never meet even at the narrowest video width. */
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .wmark .wm.tl { top: 7px; left: 9px; }
 .wmark .wm.br { bottom: 7px; right: 9px; }
+.wmark .wm.tr { top: 7px; right: 9px; }
+.wmark .wm.bl { bottom: 7px; left: 9px; }
 @media (max-width: 520px) {
   .wmark .wm { font-size: 8.5px; }
   .wmark .wm.tl { top: 5px; left: 6px; }
   .wmark .wm.br { bottom: 5px; right: 6px; }
+  .wmark .wm.tr { top: 5px; right: 6px; }
+  .wmark .wm.bl { bottom: 5px; left: 6px; }
 }
 
 /* ---- Scrub bar (inline play button + release marker) ---- */
