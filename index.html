@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=19">
+<link rel="stylesheet" href="styles.css?v=20">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -74,6 +74,7 @@ const SESSION_KEY = 'crt-study-session';
 const THEME_KEY = 'crt-theme';
 const INTRO_KEY = 'crt-intro-seen';   // login intro animation plays once per browser
 const ONBOARD_KEY = 'crt-onboarding-seen';   // names that have finished the walkthrough
+const FLAG_KEY = 'crt-flagged-clips';        // clips already reported broken THIS browser
 
 /* =========================================================================
    SUPABASE BACKEND
@@ -108,6 +109,9 @@ const SUPA_HEADERS = {
     aboutReturn: null,   // the view to come back to when leaving the About page
     // Feedback form (About page)
     fbText: '', fbEmail: '', fbSending: false, fbSent: false, fbGaveEmail: false, fbErr: '',
+    // Clips flagged as broken this browser (localStorage, so a re-flag on
+    // reload doesn't send a second report for the same clip).
+    flaggedClips: new Set(loadFlaggedClips()),
     // The sign-in form's own fields, held in state (not just the DOM) so a
     // re-render — a failed validation, or the returning-participant lookup
     // landing — never wipes what someone already typed.
@@ -248,7 +252,7 @@ const SUPA_HEADERS = {
      `times_annotated` comes from the videos table (see supabase_balancing.sql).
      If that column isn't there yet every clip reads as zero, the whole library
      lands in one tier, and step 3 alone still scatters people across it. */
-  const SET_SIZE = 10;          // clips per run before we offer a breather
+  const SET_SIZE = 20;          // clips per run before we offer a breather
   let POOL = [];                // every clip, flat, exactly as fetched
   let discovery = null;         // resolves once the library has been loaded
 
@@ -345,12 +349,12 @@ const SUPA_HEADERS = {
     return `mailto:${FEEDBACK_TO}?subject=${encodeURIComponent(FEEDBACK_SUBJECT)}&body=${body}`;
   }
 
-  async function sendFeedback(message, replyTo) {
+  async function sendFeedback(message, replyTo, subject) {
     const res = await fetch(FEEDBACK_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({
-        _subject: FEEDBACK_SUBJECT,
+        _subject: subject || FEEDBACK_SUBJECT,
         _template: 'table',
         message,
         // Only sent when they actually asked for a reply; FormSubmit uses
@@ -362,6 +366,31 @@ const SUPA_HEADERS = {
     });
     if (!res.ok) throw new Error(`Feedback service returned ${res.status}`);
     return true;
+  }
+
+  /* ---------- "flag a problem with this clip" ----------
+     A one-click escape hatch for a clip that won't play, distinct from
+     "Skip clip": Skip just moves on silently; this tells the research team
+     WHICH clip failed, with no typing required. Sent through the same
+     FormSubmit endpoint as the feedback form, but with its own subject line
+     ("CRT video issue") so the two are easy to tell apart in an inbox. */
+  function loadFlaggedClips() {
+    try { return JSON.parse(localStorage.getItem(FLAG_KEY) || '[]'); }
+    catch { return []; }
+  }
+  function saveFlaggedClips() {
+    try { localStorage.setItem(FLAG_KEY, JSON.stringify([...state.flaggedClips].slice(-500))); }
+    catch {}
+  }
+  function reportBrokenClip(clip) {
+    const who = state.user ? `${state.user.name} · ${state.user.status}` : '(not signed in)';
+    const message =
+      `A participant flagged a clip as not playing.\n\n` +
+      `Clip: ${clip.title || '(untitled)'}\n` +
+      `Video id: ${clip.videoId || clip.id}\n` +
+      `Collection: ${clip.collectionName || '(none)'}\n` +
+      `Reported by: ${who}`;
+    return sendFeedback(message, '', 'CRT video issue');
   }
 
   /* ---------- full-clip preload ----------
@@ -502,6 +531,7 @@ const SUPA_HEADERS = {
     check: '<path d="M20 6 9 17l-5-5"/>',
     dot:   '<circle cx="12" cy="12" r="7" fill="currentColor" stroke="none"/>',
     close: '<path d="M18 6 6 18M6 6l12 12"/>',
+    flag:  '<path d="M5 21V4"/><path d="M5 4h13l-3 4 3 4H5"/>',
   };
   // size: px. Stroke width scales down a little on big icons so weight looks even.
   function icon(name, size = 17) {
@@ -1203,6 +1233,7 @@ const SUPA_HEADERS = {
                   title="Saves your mark, then moves on (N)"
                   onclick="window.__act('submit')">${isLastOfSet ? `Save &amp; finish set ${icon('check', 16)}` : `Save &amp; Next clip ${icon('fwd', 16)}`}</button>
           <div id="markPanel">${markPanelHtml()}</div>
+          <div id="flagPanel" class="flag-row">${flagPanelHtml()}</div>
           <div class="nav-row">
             <button class="btn neutral" onclick="window.__act('restart')">${icon('retry', 16)} Restart clip</button>
             <button class="btn neutral" title="This clip won't play? Move on without saving a mark"
@@ -1245,6 +1276,23 @@ const SUPA_HEADERS = {
   function renderMarkPanel() {
     const el = document.getElementById('markPanel');
     if (el) el.innerHTML = markPanelHtml();
+  }
+
+  /* "Flag a problem with this clip" — rendered and updated the same safe
+     way as markPanel (touches only its own <div>, never the <video>). */
+  function flagPanelHtml() {
+    const v = currentClip();
+    if (!v) return '';
+    const key = clipKey(v);
+    const flagged = state.flaggedClips.has(key);
+    return `<button class="btn ghost small flag-btn" ${flagged ? 'disabled' : ''}
+              onclick="window.__act('flagclip')">
+      ${icon('flag', 14)} ${flagged ? 'Problem reported — thank you' : "Flag a problem with this clip"}
+    </button>`;
+  }
+  function renderFlagPanel() {
+    const el = document.getElementById('flagPanel');
+    if (el) el.innerHTML = flagPanelHtml();
   }
 
   /* ---------- live clock + transport ---------- */
@@ -1729,6 +1777,21 @@ const SUPA_HEADERS = {
     // Move to the next clip WITHOUT recording anything — the escape hatch for a
     // clip that won't play, so a participant is never stuck on a dead video.
     if (act === 'skip') { return advanceQueue(); }
+
+    // One click, no typing: tells the research team which clip failed.
+    // Marked "reported" immediately (before the network call resolves) so a
+    // slow connection can't invite a double-click into two reports.
+    if (act === 'flagclip') {
+      const v = currentClip();
+      if (!v) return;
+      const key = clipKey(v);
+      if (state.flaggedClips.has(key)) return;
+      state.flaggedClips.add(key);
+      saveFlaggedClips();
+      renderFlagPanel();               // NOT render() — must not rebuild <video>
+      try { await reportBrokenClip(v); } catch { /* best-effort; the click still registered locally */ }
+      return;
+    }
 
     // Transport controls mutate the <video> in place — never re-render here,
     // or the element is rebuilt and playback position is lost.
