@@ -213,39 +213,6 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
 }
 .link-btn:hover { color: var(--ink); }
 
-/* ---- Remembered-login popup ----
-   Shown the instant the login screen appears (device-local, no lookup),
-   offering to sign back in as whoever last used this device — a shared ward
-   tablet gets logged out between shifts, but it's usually the same person
-   coming back for their next set. Suppressed the moment the form has
-   anything typed into it. */
-.remembered-backdrop {
-  position: fixed; inset: 0;
-  background: rgba(4, 10, 12, .55);
-  backdrop-filter: blur(2px);
-  z-index: 70;
-  display: flex; align-items: center; justify-content: center;
-  padding: 20px;
-  animation: modalFade .18s ease both;
-}
-.remembered-card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: clamp(18px, 4vw, 26px);
-  width: min(360px, 100%);
-  text-align: center;
-}
-.remembered-eyebrow {
-  margin: 0 0 4px;
-  font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
-  color: var(--muted);
-}
-.remembered-card h3 { margin: 0 0 4px; font-size: 20px; }
-.remembered-card p.muted { margin: 0 0 16px; }
-.remembered-card .btn.nextvid { margin-bottom: 10px; }
-
 /* ==========================================================================
    Login screen: sign-in card + "About this research" panel.
    Desktop puts the panel to the RIGHT of the form; phones stack it BELOW.
