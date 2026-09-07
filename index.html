@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0E2A2F">
+<!-- GitHub Pages can't set custom HTTP headers, so without this a browser
+     that already has this page cached (typically a PC that visited before
+     — a phone visiting for the first time just gets the latest by default)
+     can keep serving that OLD copy indefinitely: old JS, missing whatever
+     shipped since. These meta tags are the only cache-busting lever a
+     static host like this leaves us. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Capillary Refill Time (CRT) Visual Assessment Study</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
