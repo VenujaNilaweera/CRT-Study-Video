@@ -911,10 +911,10 @@ const SUPA_HEADERS = {
      a [bracketed] placeholder, because this app has no way to know those and
      must never invent them.
 
-     TODO(Venuja): replace every [bracketed] placeholder below with the real
-     details, and drop your photos into assets/ as about-1.jpg, about-2.jpg,
-     about-3.jpg. Any photo you haven't added yet shows a tidy empty frame
-     instead of a broken image, so it's safe to add them one at a time.
+     TODO(Venuja): replace every remaining [bracketed] placeholder below with
+     the real details, and drop the team photo into assets/about-team.jpg. A
+     photo that hasn't been added yet shows a tidy empty frame instead of a
+     broken image, so it's safe to add later.
      ========================================================================= */
   function aboutPhoto(file, caption) {
     return `<figure class="about-photo">
@@ -954,18 +954,16 @@ const SUPA_HEADERS = {
 
       <section class="about-sec">
         <h3>The team</h3>
-        <!-- TODO(Venuja): replace these placeholders with the real names -->
+        <!-- TODO(Venuja): still placeholders — fill in once confirmed -->
         <dl class="about-facts">
           <div><dt>Principal investigator</dt><dd>[Principal investigator name]</dd></div>
           <div><dt>Supervisor(s)</dt><dd>[Supervisor name(s)]</dd></div>
-          <div><dt>Research team</dt><dd>[Research team / co-investigator names]</dd></div>
-          <div><dt>Department / Institution</dt><dd>[Department, Faculty, and Institution name]</dd></div>
+          <div><dt>Research team</dt><dd>T.H.V.K. Nilaweera, B.P.H. Liyanage</dd></div>
+          <div><dt>Department / Institution</dt><dd>Department of Electrical and Electronic Engineering, Faculty of Engineering, University of Jaffna</dd></div>
         </dl>
-        <!-- TODO(Venuja): add assets/about-1.jpg, about-2.jpg, about-3.jpg -->
+        <!-- TODO(Venuja): drop the team photo in as assets/about-team.jpg -->
         <div class="about-photos">
-          ${aboutPhoto('about-1.jpg', 'The research team')}
-          ${aboutPhoto('about-2.jpg', 'Recording a capillary refill test')}
-          ${aboutPhoto('about-3.jpg', 'The department')}
+          ${aboutPhoto('about-team.jpg', 'The research team')}
         </div>
       </section>
 
@@ -988,6 +986,8 @@ const SUPA_HEADERS = {
         <p>Found something confusing, something broken, or have a thought about the study? Tell us — it comes straight to the research team.</p>
         ${viewFeedbackForm()}
       </section>
+
+      <p class="about-credit">This study platform was built by T.H.V.K. Nilaweera and B.P.H. Liyanage.</p>
 
       <div class="about-bottom">
         <button class="btn nextvid block" onclick="window.__act('aboutback')">Back to the study ${icon('fwd', 16)}</button>
