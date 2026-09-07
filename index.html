@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=24">
+<link rel="stylesheet" href="styles.css?v=25">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -752,27 +752,37 @@ const SUPA_HEADERS = {
     </div>`;
   }
 
-  /* Offered the instant the login screen appears — before anyone has typed
-     anything — so the common case (the same participant coming back to do
-     their next set on the same device) never has to retype name/role/age.
-     Suppressed once the name field holds anything, so it can never fight
-     with someone who is deliberately signing in as someone else. */
-  function viewRememberedLogin() {
-    if (state.rememberedDismissed) return '';
-    if (state.formName || state.formStatus || state.formAge) return '';
+  /* A shared ward device gets logged out between shifts, but it's usually
+     the same person typing their own name back in for the next set — so as
+     soon as what they've typed could be the start of the last name used on
+     THIS device (device-local, no server round trip), offer to fill in the
+     rest and sign back in. Nothing shows before typing starts, and nothing
+     shows once the server-verified returning-participant confirm below has
+     resolved for this exact name — no point asking the same question twice. */
+  function matchingRememberedLogin(typed) {
+    if (state.rememberedDismissed) return null;
+    const t = (typed || '').trim().toLowerCase();
+    if (!t) return null;
     const last = loadLastLogin();
+    if (!last) return null;
+    if (!last.name.trim().toLowerCase().startsWith(t)) return null;
+    return last;
+  }
+  function rememberedConfirmHtml() {
+    if (state.returning && state.returning.exists) return '';
+    const last = matchingRememberedLogin(state.formName);
     if (!last) return '';
-    return `<div class="remembered-backdrop">
-      <div class="remembered-card" role="dialog" aria-modal="true" aria-label="Continue as ${esc(last.name)}">
-        <p class="remembered-eyebrow">Welcome back</p>
-        <h3>${esc(last.name)}</h3>
-        <p class="muted">${esc(last.status)}${last.age ? ` · ${esc(last.age)}` : ''}</p>
-        <button class="btn nextvid block" onclick="window.__act('lastlogincontinue')">
-          Continue as ${esc(last.name)} ${icon('fwd', 16)}
-        </button>
-        <button class="link-btn" onclick="window.__act('lastlogindifferent')">Not you? Use a different name</button>
+    return `<div class="name-confirm">
+      <p>Continue as <b>${esc(last.name)}</b> — ${esc(last.status)}${last.age ? ` · ${esc(last.age)}` : ''}?</p>
+      <div class="name-confirm-actions">
+        <button class="btn nextvid small" onclick="window.__act('lastlogincontinue')">Continue ${icon('fwd', 14)}</button>
+        <button class="link-btn" onclick="window.__act('lastlogindifferent')">Not you? Keep typing</button>
       </div>
     </div>`;
+  }
+  function renderRememberedConfirm() {
+    const el = document.getElementById('rememberedConfirm');
+    if (el) el.innerHTML = rememberedConfirmHtml();
   }
 
   function viewLogin() {
@@ -782,7 +792,7 @@ const SUPA_HEADERS = {
     try { seen = localStorage.getItem(INTRO_KEY) === '1'; } catch {}
     const anim = seen ? '' : ' intro';
 
-    return `${viewRememberedLogin()}<div class="login-layout${anim}">
+    return `<div class="login-layout${anim}">
       <!-- Reading order is fixed: the study is NAMED first, then explained in
            two lines, and only then are any details asked for. The hero spans
            both columns so that order holds on a wide screen too, where the
@@ -807,6 +817,7 @@ const SUPA_HEADERS = {
                  oninput="window.__formInput('formName', this.value)"
                  onblur="window.__act('namecheck')">
           <span class="field-hint">Part of your name or initials is enough — it only groups your responses.</span>
+          <div id="rememberedConfirm">${rememberedConfirmHtml()}</div>
           ${viewReturningConfirm()}
         </div>
         <div class="field"><label for="f-status">Professional role</label>
@@ -1666,16 +1677,9 @@ const SUPA_HEADERS = {
   // validation error, the returning-participant confirm landing).
   window.__formInput = function(field, value) {
     state[field] = value;
-    // Typing or picking a value by hand means the remembered-login popup no
-    // longer applies to what's on screen — pull it out of the DOM directly
-    // (no render(), for the same cursor-preserving reason as above) and mark
-    // it dismissed so it doesn't reappear on the next unrelated re-render.
-    if (field === 'formName' || field === 'formStatus' || field === 'formAge') {
-      if (!state.rememberedDismissed) {
-        state.rememberedDismissed = true;
-        document.querySelector('.remembered-backdrop')?.remove();
-      }
-    }
+    // Re-check the remembered-login match on every keystroke — targeted
+    // update only (same cursor-preserving reason as above), never render().
+    if (field === 'formName') renderRememberedConfirm();
   };
 
   /* Shared by the Start button and the "Continue" button on the returning-
@@ -1810,9 +1814,9 @@ const SUPA_HEADERS = {
       state.returning = null;
       return render();
     }
-    /* ---------- remembered-login popup ----------
+    /* ---------- remembered-login inline confirm ----------
        Device-local, no network round trip — this is just "sign in again
-       with exactly what was typed last time", so it goes straight through
+       with exactly what was used last time", so it goes straight through
        doLogin() the same way the returning-participant Continue button does. */
     if (act === 'lastlogincontinue') {
       const last = loadLastLogin();
@@ -1820,8 +1824,12 @@ const SUPA_HEADERS = {
       return doLogin(last.name, last.status, last.age);
     }
     if (act === 'lastlogindifferent') {
+      // Targeted update only — the name field is very possibly still
+      // focused (this button sits right under it), so a full render() here
+      // would rebuild the input and drop the cursor mid-type.
       state.rememberedDismissed = true;
-      return render();
+      renderRememberedConfirm();
+      return;
     }
     if (act === 'onboardnext') { state.onboardPage = Math.min(ONBOARD_PAGES.length - 1, (state.onboardPage || 0) + 1); return render(); }
     if (act === 'onboardback') { state.onboardPage = Math.max(0, (state.onboardPage || 0) - 1); return render(); }
