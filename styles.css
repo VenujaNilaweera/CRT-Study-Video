@@ -1367,6 +1367,72 @@ body[data-view="player"] .run-bar { flex: none; }
 .nav-row { display: flex; gap: 10px; }
 .nav-row .btn { flex: 1; }
 
+/* "How to use this page" — a quiet full-width link into the coach-marks tour,
+   sitting with the other low-frequency helpers below the primary actions. */
+.howto-btn {
+  width: 100%;
+  justify-content: center;
+  margin-top: 10px;
+  color: var(--muted);
+  border-color: var(--line);
+}
+.howto-btn:hover { color: var(--teal); border-color: var(--teal); background: var(--teal-soft); }
+
+/* ---- In-player "how to" coach-marks tour ----
+   A dimmed backdrop, a spotlight cut around the live control, and a popover
+   explaining it. The spotlight is one box sized to the target with a huge
+   box-shadow doing the dimming, so there's no SVG mask to keep in sync. */
+.tour-backdrop { position: fixed; inset: 0; z-index: 80; }
+.tour-spot {
+  position: fixed; z-index: 81;
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px var(--teal), 0 0 0 9999px rgba(4, 10, 12, .68);
+  pointer-events: none;
+  transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease, opacity .2s ease;
+  animation: tourPulse 1.8s ease-in-out infinite;
+}
+@keyframes tourPulse {
+  0%, 100% { box-shadow: 0 0 0 3px var(--teal), 0 0 0 9999px rgba(4, 10, 12, .68); }
+  50%      { box-shadow: 0 0 0 6px var(--teal), 0 0 0 9999px rgba(4, 10, 12, .68); }
+}
+.tour-pop {
+  position: fixed; z-index: 82;
+  width: min(330px, calc(100vw - 24px));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 16px 17px 15px;
+  animation: tourPopIn .2s ease both;
+}
+@keyframes tourPopIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.tour-pop-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+.tour-eyebrow {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase;
+  color: var(--teal); font-weight: 700;
+}
+.tour-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  background: transparent; border: none; border-radius: 7px;
+  color: var(--muted); cursor: pointer;
+}
+.tour-x:hover { background: var(--surface-2); color: var(--ink); }
+.tour-title { margin: 0 0 5px; font-size: 16px; line-height: 1.3; }
+.tour-body { margin: 0 0 14px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
+.tour-body b { color: var(--ink); }
+.tour-body kbd {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px;
+  padding: 1px 5px; color: var(--ink);
+}
+.tour-nav { display: flex; gap: 9px; }
+.tour-nav .btn { flex: 1; justify-content: center; }
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot { animation: none; }
+  .tour-pop { animation: none; }
+}
+
 /* ---- Video stage + buffering overlay ---- */
 .vid-stage { position: relative; min-height: 0; display: flex; }
 .vid-stage video { width: 100%; }

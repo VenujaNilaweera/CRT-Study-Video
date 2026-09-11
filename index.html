@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=25">
+<link rel="stylesheet" href="styles.css?v=26">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -48,6 +48,7 @@
   <div class="actions" id="hdrActions"></div>
 </div>
 <div id="drawerRoot"></div>
+<div id="tourRoot"></div>
 
 <div class="wrap" id="app"></div>
 
@@ -116,6 +117,7 @@ const SUPA_HEADERS = {
     view: 'login', user: null, marked: null, saving: false, msg: '', err: '', speed: 1,
     onboardPage: 0,
     drawerOpen: false,   // the ☰ side menu
+    tourStep: null,      // null = the in-player "how to" tour is closed; otherwise its step index
     aboutReturn: null,   // the view to come back to when leaving the About page
     // Feedback form (About page)
     fbText: '', fbEmail: '', fbSending: false, fbSent: false, fbGaveEmail: false, fbErr: '',
@@ -559,6 +561,7 @@ const SUPA_HEADERS = {
     dot:   '<circle cx="12" cy="12" r="7" fill="currentColor" stroke="none"/>',
     close: '<path d="M18 6 6 18M6 6l12 12"/>',
     flag:  '<path d="M5 21V4"/><path d="M5 4h13l-3 4 3 4H5"/>',
+    help:  '<circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.8 2.8 0 0 1 5.4 1c0 1.9-2.8 2.5-2.8 2.5"/><path d="M12 17h.01"/>',
   };
   // size: px. Stroke width scales down a little on big icons so weight looks even.
   function icon(name, size = 17) {
@@ -652,6 +655,9 @@ const SUPA_HEADERS = {
     else if (state.view === 'about') html = viewAbout();
     app.innerHTML = html;
     renderDrawer();
+    // Any full render rebuilt #app, so a tour anchored to the old DOM is stale;
+    // close it (leaving the player also means its controls are gone).
+    if (state.tourStep != null) { state.tourStep = null; renderTour(); }
 
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
 
@@ -911,6 +917,167 @@ const SUPA_HEADERS = {
         </div>
       </nav>`;
   }
+
+  /* =========================================================================
+     IN-PLAYER "HOW TO" TOUR  (coach marks)
+
+     An on-demand walkthrough that spotlights the REAL controls on the player,
+     one at a time, with a short explanation and Back / Next. Unlike the
+     first-run onboarding (which uses illustrations on its own screen), this
+     runs ON the live player so someone who forgets — or is brand new to a
+     shared device — can be reminded exactly where each control is.
+
+     It lives in #tourRoot, OUTSIDE #app, and is driven entirely by its own
+     render — it never calls the top-level render() while the player is up,
+     because that would rebuild the <video> and restart buffering. The spotlight
+     is a single element sized to the target's bounding box with a huge
+     box-shadow that darkens everything else, so no SVG mask is needed and it
+     works at any viewport size. Positions are read fresh from the live DOM on
+     every step (and on resize/scroll), so it stays correct on phone and desktop.
+     ========================================================================= */
+  const PLAYER_TOUR = [
+    { sel: '.vid-stage',
+      title: 'The clip plays here',
+      body: 'A nail bed is pressed, then released. Watch for the <b>green flash</b> — that is the moment pressure is released and timing starts.' },
+    { sel: '#miniPlay',
+      title: 'Play and pause',
+      body: 'Tap this button (or press <kbd>Space</kbd>, or tap the video) to play the clip and pause it.' },
+    { sel: '.scrub-wrap',
+      title: 'Move through the clip',
+      body: 'Drag along this bar to scrub back and forth. The small tick marks the release point — where refill timing begins.' },
+    { sel: '.scrub-wrap',
+      title: 'Step frame by frame',
+      body: 'For a precise mark, use <kbd>←</kbd> and <kbd>→</kbd> to move one frame at a time (hold <kbd>Shift</kbd> for ten). This lets you land exactly on the frame the colour returns.' },
+    { sel: '.readout .clock',
+      title: 'Your current time',
+      body: 'This shows the time from pressure release at the frame you are on — the number your mark will be saved as.' },
+    { sel: '#markBtn',
+      title: 'Mark the colour change',
+      body: 'The instant the colour returns, press <b>Mark colour change</b> (or press <kbd>M</kbd>). You can re-mark as many times as you like until it looks right.' },
+    { sel: '#nextVidBtn',
+      title: 'Save and move on',
+      body: 'Once you are happy with your mark, press <b>Save &amp; Next</b> (or <kbd>N</kbd>) to store it and bring up the next clip.' },
+    { sel: '.nav-row',
+      title: 'Restart or skip',
+      body: '<b>Restart clip</b> jumps back to the beginning. <b>Skip clip</b> moves on without saving a mark — use it if a clip won’t play or you can’t judge it.' },
+    { sel: '.flag-btn',
+      title: 'Something wrong with a clip?',
+      body: 'Press <b>Flag a problem</b> and the research team is told which clip it was, so they can check or replace it. One tap — nothing else to fill in.' }
+  ];
+
+  function openTour() {
+    // Pause playback so the spotlight isn't fighting a moving picture, and
+    // start at the first step.
+    const vid = document.getElementById('vid');
+    if (vid) { try { vid.pause(); } catch {} }
+    state.tourStep = 0;
+    renderTour();
+  }
+  function closeTour() {
+    state.tourStep = null;
+    renderTour();
+  }
+  function tourGo(delta) {
+    if (state.tourStep == null) return;
+    const next = state.tourStep + delta;
+    if (next < 0) return;
+    if (next >= PLAYER_TOUR.length) return closeTour();
+    state.tourStep = next;
+    renderTour();
+  }
+
+  function renderTour() {
+    const root = document.getElementById('tourRoot');
+    if (!root) return;
+    // Closed, or somehow no longer on the player — tear the whole thing down.
+    if (state.tourStep == null || state.view !== 'player') {
+      root.innerHTML = '';
+      window.removeEventListener('resize', positionTour);
+      window.removeEventListener('scroll', positionTour, true);
+      return;
+    }
+    const i = Math.max(0, Math.min(PLAYER_TOUR.length - 1, state.tourStep));
+    const step = PLAYER_TOUR[i];
+    const isLast = i === PLAYER_TOUR.length - 1;
+    root.innerHTML = `
+      <div class="tour-backdrop" onclick="window.__act('tourclose')"></div>
+      <div class="tour-spot" id="tourSpot" aria-hidden="true"></div>
+      <div class="tour-pop" id="tourPop" role="dialog" aria-modal="true" aria-label="${esc(step.title)}">
+        <div class="tour-pop-head">
+          <span class="tour-eyebrow">Step ${i + 1} of ${PLAYER_TOUR.length}</span>
+          <button class="tour-x" onclick="window.__act('tourclose')" aria-label="Close">${icon('close', 16)}</button>
+        </div>
+        <h3 class="tour-title">${step.title}</h3>
+        <p class="tour-body">${step.body}</p>
+        <div class="tour-nav">
+          <button class="btn neutral small" onclick="window.__act('tourback')" ${i === 0 ? 'disabled' : ''}>${icon('back', 15)} Back</button>
+          <button class="btn nextvid small" onclick="window.__act('tournext')">${isLast ? 'Done' : 'Next'} ${icon(isLast ? 'check' : 'fwd', 15)}</button>
+        </div>
+      </div>`;
+    // Two rAFs: let the browser lay the popover out (so we can measure its
+    // real height) before we place it against the target.
+    requestAnimationFrame(() => requestAnimationFrame(positionTour));
+    window.addEventListener('resize', positionTour);
+    window.addEventListener('scroll', positionTour, true);
+  }
+
+  /* Reads the live target's rectangle and pins the spotlight + popover to it.
+     Called on every step and again on resize/scroll, so it never goes stale. */
+  function positionTour() {
+    if (state.tourStep == null) return;
+    const step = PLAYER_TOUR[Math.max(0, Math.min(PLAYER_TOUR.length - 1, state.tourStep))];
+    const spot = document.getElementById('tourSpot');
+    const pop = document.getElementById('tourPop');
+    if (!spot || !pop) return;
+    const el = document.querySelector(step.sel);
+    const vw = window.innerWidth, vh = window.innerHeight;
+
+    if (!el) {
+      // Target not on screen (e.g. a control hidden at this width): centre the
+      // popover and hide the spotlight rather than pointing at nothing.
+      spot.style.opacity = '0';
+      pop.style.left = Math.max(12, (vw - pop.offsetWidth) / 2) + 'px';
+      pop.style.top = Math.max(12, (vh - pop.offsetHeight) / 2) + 'px';
+      return;
+    }
+    const pad = 8;
+    const r = el.getBoundingClientRect();
+    const x = Math.max(0, r.left - pad), y = Math.max(0, r.top - pad);
+    const w = Math.min(vw, r.right + pad) - x, h = Math.min(vh, r.bottom + pad) - y;
+    spot.style.opacity = '1';
+    spot.style.left = x + 'px';
+    spot.style.top = y + 'px';
+    spot.style.width = w + 'px';
+    spot.style.height = h + 'px';
+
+    // Place the popover in whichever gap around the target is roomier —
+    // below by default, above if the target sits low, and clamped to the
+    // viewport so it is never cut off on a small screen.
+    const pw = pop.offsetWidth, ph = pop.offsetHeight, gap = 14;
+    const below = vh - r.bottom, above = r.top;
+    let top;
+    if (below >= ph + gap || below >= above) top = Math.min(vh - ph - 12, r.bottom + gap);
+    else top = Math.max(12, r.top - ph - gap);
+    let left = r.left + r.width / 2 - pw / 2;
+    left = Math.max(12, Math.min(vw - pw - 12, left));
+    pop.style.left = left + 'px';
+    pop.style.top = Math.max(12, top) + 'px';
+  }
+
+  /* Keyboard while the tour is open: →/Enter/Space = next, ← = back, Esc =
+     close. Captured before the player's own keys so Space doesn't also toggle
+     playback and the arrows don't also step frames underneath the tour. */
+  function onTourKey(e) {
+    if (state.tourStep == null) return;
+    if (e.key === 'ArrowRight' || e.key === 'Enter' || e.code === 'Space') {
+      e.preventDefault(); e.stopPropagation(); tourGo(1);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault(); e.stopPropagation(); tourGo(-1);
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation(); closeTour();
+    }
+  }
+  document.addEventListener('keydown', onTourKey, true);
 
   /* =========================================================================
      ABOUT PAGE  (full screen)
@@ -1311,6 +1478,9 @@ const SUPA_HEADERS = {
                     onclick="window.__act('skip')">Skip clip ${icon('fwd', 16)}</button>
           </div>
           <div id="flagPanel" class="flag-row">${flagPanelHtml()}</div>
+          <button class="btn ghost small howto-btn" onclick="window.__act('touropen')">
+            ${icon('help', 15)} How to use this page
+          </button>
           <div class="shortcuts">
             <span><kbd>Space</kbd> play / pause</span>
             <span><kbd>←</kbd><kbd>→</kbd> step 1 frame</span>
@@ -1636,6 +1806,7 @@ const SUPA_HEADERS = {
      (Shift = 10 frames), ↑/↓ or J/L = 1 s, M=mark, R=restart. */
   function onPlayerKey(e) {
     if (state.view !== 'player') return;
+    if (state.tourStep != null) return;   // the tour owns the keyboard while it's open
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
     const step = e.shiftKey ? 10 : 1;
@@ -1721,6 +1892,12 @@ const SUPA_HEADERS = {
     /* ---------- drawer + About page ---------- */
     if (act === 'drawer')      { state.drawerOpen = !state.drawerOpen; return renderDrawer(); }
     if (act === 'drawerclose') { state.drawerOpen = false; return renderDrawer(); }
+    /* In-player "how to" tour — its own root, never a top-level render() (that
+       would rebuild the <video> and restart buffering). */
+    if (act === 'touropen')  return openTour();
+    if (act === 'tourclose') return closeTour();
+    if (act === 'tournext')  return tourGo(1);
+    if (act === 'tourback')  return tourGo(-1);
     if (act === 'drawerhome')  {
       state.drawerOpen = false;
       if (state.view === 'about') return window.__act('aboutback');
