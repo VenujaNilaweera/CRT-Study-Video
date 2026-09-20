@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=26">
+<link rel="stylesheet" href="styles.css?v=27">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -116,6 +116,7 @@ const SUPA_HEADERS = {
   let state = {
     view: 'login', user: null, marked: null, saving: false, msg: '', err: '', speed: 1,
     onboardPage: 0,
+    onboardReplay: false,   // true when the walkthrough was re-opened from the player ("How it works")
     drawerOpen: false,   // the ☰ side menu
     tourStep: null,      // null = the in-player "how to" tour is closed; otherwise its step index
     aboutReturn: null,   // the view to come back to when leaving the About page
@@ -587,6 +588,14 @@ const SUPA_HEADERS = {
   // Skip, or reaching the last page's Start button, both end onboarding the
   // same way: gate it shut for this browser and drop into Collections.
   function finishOnboarding() {
+    // Re-opened from the player ("How it works")? Just go back to the clip
+    // they were on — don't touch the first-run gate or the queue.
+    if (state.onboardReplay) {
+      state.onboardReplay = false;
+      state.onboardPage = 0;
+      state.view = 'player';
+      return render();
+    }
     markOnboarded(state.user && state.user.name);
     state.onboardPage = 0;
     // Straight into the first clip — there is nothing to choose.
@@ -1215,8 +1224,8 @@ const SUPA_HEADERS = {
   const ONBOARD_PAGES = [
     {
       eyebrow: 'Step 1 of 3 · Watch',
-      title: 'What you’re watching',
-      body: 'Pressure is held on the nail bed, then released. The screen flashes <b>green</b> for a moment at the release — that is when timing starts.',
+      title: 'Watch how it works',
+      body: 'Here is the whole test playing. Pressure is held on the nail bed, then released — the screen flashes <b>green</b> for a moment at the release, and that is when timing starts. Watch the colour drain, then return.',
       illo: 'press'
     },
     {
@@ -1249,14 +1258,47 @@ const SUPA_HEADERS = {
     </figure>`;
   const obArrow = `<span class="ob-arrow" aria-hidden="true">${icon('fwd', 15)}</span>`;
 
+  const prefersReducedMotion = () =>
+    window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* A short, auto-looping "clip" that actually PLAYS the whole test — pressure
+     held, the green release flash, then the colour returning and the moment to
+     Mark — so a first-timer can watch it once and know exactly what to look
+     for. It is built from the real study frames with pure CSS timing rather
+     than a video file, so it plays identically on every device with no codec
+     or download to worry about (which matters for a study handed to a hundred
+     students on whatever phone or PC they happen to have). */
+  function demoReelHtml() {
+    return `<div class="demo-reel" role="img"
+         aria-label="Demonstration: the nail bed is pressed, the screen flashes green as pressure is released, then the colour returns — the moment to press Mark.">
+      <img class="dr-base" src="${OB_SHOT.press.src}" alt="" width="384" height="384" decoding="async">
+      <img class="dr-refill" src="${OB_SHOT.refill.src}" alt="" width="384" height="384" decoding="async">
+      <div class="dr-flash" aria-hidden="true"></div>
+      <div class="dr-flash-label" aria-hidden="true">Released · timing starts</div>
+      <div class="dr-mark" aria-hidden="true">${icon('dot', 12)} Mark now<span class="dr-ripple"></span></div>
+      <div class="dr-caps" aria-hidden="true">
+        <span class="dr-cap dr-cap1">Pressure is held on the nail bed…</span>
+        <span class="dr-cap dr-cap2">Released — the frame flashes <b>green</b></span>
+        <span class="dr-cap dr-cap3">Colour returns — press <b>Mark</b> here</span>
+      </div>
+      <span class="dr-badge" aria-hidden="true">${icon('fwd', 11)} demo · loops</span>
+    </div>`;
+  }
+
   function onboardIllo(kind) {
     if (kind === 'press') {
-      // The whole test in one line: pressure, the release flash, the refill.
-      return `<div class="ob-scene ob-scene-press">
-        ${shot('press', 'Pressure held')}${obArrow}
-        ${shot('release', 'Released — green flash')}${obArrow}
-        ${shot('refill', 'Colour returns')}
-      </div>`;
+      // A first-timer's first sight of the test should MOVE, so they see the
+      // green flash happen rather than having to imagine it — unless the
+      // viewer has asked for reduced motion, in which case fall back to the
+      // three still frames laid out in sequence.
+      if (prefersReducedMotion()) {
+        return `<div class="ob-scene ob-scene-press">
+          ${shot('press', 'Pressure held')}${obArrow}
+          ${shot('release', 'Released — green flash')}${obArrow}
+          ${shot('refill', 'Colour returns')}
+        </div>`;
+      }
+      return demoReelHtml();
     }
     if (kind === 'mark') {
       // Only the half that needs a response: the flash, then the moment to press.
@@ -1286,16 +1328,22 @@ const SUPA_HEADERS = {
     const page = Math.max(0, Math.min(ONBOARD_PAGES.length - 1, state.onboardPage || 0));
     const p = ONBOARD_PAGES[page];
     const isLast = page === ONBOARD_PAGES.length - 1;
+    const replay = state.onboardReplay;   // opened from the player, not first-run
     const dots = ONBOARD_PAGES.map((_, i) =>
       `<button class="ob-dot ${i === page ? 'active' : ''}" aria-label="Go to step ${i + 1}"
          aria-current="${i === page ? 'true' : 'false'}" onclick="window.__act('onboardgoto',${i})"></button>`
     ).join('');
+    // First-run ends on "Start" (into the first clip); a replay ends on
+    // "Back to clip" (returns to the clip they paused on), and its skip
+    // reads "Close" rather than "Skip".
+    const lastLabel = replay ? 'Back to clip' : 'Start';
+    const lastIcon = replay ? 'fwd' : 'check';
 
     return `<div class="onboard-layout">
       <div class="card onboard-card">
         <div class="ob-top">
           <span class="ob-eyebrow">${p.eyebrow}</span>
-          <button class="ob-skip" onclick="window.__act('onboardskip')">Skip</button>
+          <button class="ob-skip" onclick="window.__act('onboardskip')">${replay ? 'Close' : 'Skip'}</button>
         </div>
         <div class="ob-illo-wrap">${onboardIllo(p.illo)}</div>
         <h2 class="ob-title">${p.title}</h2>
@@ -1303,7 +1351,7 @@ const SUPA_HEADERS = {
         <div class="ob-dots">${dots}</div>
         <div class="ob-nav">
           <button class="btn neutral" onclick="window.__act('onboardback')" ${page === 0 ? 'disabled' : ''}>${icon('back', 16)} Back</button>
-          <button class="btn ob-primary" onclick="window.__act('${isLast ? 'onboardfinish' : 'onboardnext'}')">${isLast ? 'Start' : 'Next'} ${icon(isLast ? 'check' : 'fwd', 16)}</button>
+          <button class="btn ob-primary" onclick="window.__act('${isLast ? 'onboardfinish' : 'onboardnext'}')">${isLast ? lastLabel : 'Next'} ${icon(isLast ? lastIcon : 'fwd', 16)}</button>
         </div>
       </div>
     </div>`;
@@ -1435,7 +1483,11 @@ const SUPA_HEADERS = {
                   onclick="window.__act('pause')">${icon('back', 16)} Pause</button>
           <h2>Clip ${doneHere + 1} of ${total}</h2>
         </div>
-        <span class="progress-pill">${doneHere} of ${total} done${setNumber() > 1 ? ` · set ${setNumber()}` : ''}</span>
+        <div class="run-head-right">
+          <button class="btn neutral small howto-top" title="Watch a quick demo of how this works"
+                  onclick="window.__act('howto')">${icon('help', 15)} How it works</button>
+          <span class="progress-pill">${doneHere} of ${total} done${setNumber() > 1 ? ` · set ${setNumber()}` : ''}</span>
+        </div>
       </div>
       <div class="run-bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
       <div class="player-layout">
@@ -2016,6 +2068,14 @@ const SUPA_HEADERS = {
       state.rememberedDismissed = true;
       renderRememberedConfirm();
       return;
+    }
+    /* "How it works" — replays the first-run walkthrough (with its playable
+       demo) on demand from inside the player, then returns to the same clip. */
+    if (act === 'howto') {
+      state.onboardReplay = true;
+      state.onboardPage = 0;
+      state.view = 'onboarding';
+      return render();
     }
     if (act === 'onboardnext') { state.onboardPage = Math.min(ONBOARD_PAGES.length - 1, (state.onboardPage || 0) + 1); return render(); }
     if (act === 'onboardback') { state.onboardPage = Math.max(0, (state.onboardPage || 0) - 1); return render(); }
