@@ -742,6 +742,80 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
    never letterboxed or cropped to fit a box drawn for shapes. */
 .ob-scene { position: relative; display: flex; align-items: center; justify-content: center; }
 
+/* ---- Playable demo reel ----
+   A looping "clip" of the real test — press, green release flash, refill,
+   and the moment to Mark — assembled from the study frames on a single CSS
+   timeline (~5.4s). No video file, so it plays the same everywhere. */
+.demo-reel {
+  position: relative;
+  width: min(340px, 76vw);
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #04121a;
+}
+.demo-reel img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.dr-base   { opacity: 1; }
+.dr-refill { opacity: 0; animation: drRefill 5.4s ease-in-out infinite; }
+.dr-flash {
+  position: absolute; inset: 0; background: #35e07a; opacity: 0;
+  mix-blend-mode: screen; animation: drFlash 5.4s ease-in-out infinite;
+}
+.dr-flash-label {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .4px;
+  color: #062; background: rgba(53,224,122,.92);
+  padding: 3px 9px; border-radius: 20px; white-space: nowrap;
+  opacity: 0; animation: drLabel 5.4s ease-in-out infinite;
+}
+.dr-mark {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px;
+  color: #fff; background: var(--pulse);
+  padding: 7px 13px; border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  opacity: 0; animation: drMark 5.4s ease-in-out infinite;
+}
+.dr-mark .dr-ripple {
+  position: absolute; inset: -4px; border-radius: 22px;
+  border: 2px solid var(--pulse); animation: drRipple 1.4s ease-out infinite;
+}
+.dr-caps { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; }
+.dr-cap {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 8px 10px; text-align: center;
+  font-size: 12.5px; line-height: 1.3; color: #fff;
+  background: linear-gradient(to top, rgba(4,12,18,.9), rgba(4,12,18,0));
+  opacity: 0;
+}
+.dr-cap b { color: #7ff0a8; }
+.dr-cap1 { animation: drCap1 5.4s ease-in-out infinite; }
+.dr-cap2 { animation: drCap2 5.4s ease-in-out infinite; }
+.dr-cap3 { animation: drCap3 5.4s ease-in-out infinite; }
+.dr-badge {
+  position: absolute; top: 9px; right: 9px;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .4px;
+  color: #cfe; background: rgba(4,12,18,.6);
+  padding: 3px 8px; border-radius: 20px;
+}
+@keyframes drRefill { 0%,36% { opacity: 0; } 52%,88% { opacity: 1; } 96%,100% { opacity: 0; } }
+@keyframes drFlash  { 0%,30% { opacity: 0; } 34% { opacity: .9; } 40% { opacity: .5; } 46%,100% { opacity: 0; } }
+@keyframes drLabel  { 0%,31% { opacity: 0; } 35%,45% { opacity: 1; } 49%,100% { opacity: 0; } }
+@keyframes drMark   { 0%,54% { opacity: 0; transform: translate(-50%,-50%) scale(.9); }
+                      60% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+                      86% { opacity: 1; } 92%,100% { opacity: 0; } }
+@keyframes drRipple { 0% { opacity: .8; transform: scale(1); } 100% { opacity: 0; transform: scale(1.5); } }
+@keyframes drCap1 { 0%,2% { opacity: 0; } 7%,27% { opacity: 1; } 31%,100% { opacity: 0; } }
+@keyframes drCap2 { 0%,31% { opacity: 0; } 35%,47% { opacity: 1; } 51%,100% { opacity: 0; } }
+@keyframes drCap3 { 0%,54% { opacity: 0; } 59%,86% { opacity: 1; } 91%,100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .dr-refill, .dr-flash, .dr-flash-label, .dr-mark, .dr-ripple,
+  .dr-cap1, .dr-cap2, .dr-cap3 { animation: none; }
+}
+
 .ob-title { font-size: clamp(18px, 3vw, 21px); margin-bottom: 8px; }
 .ob-body { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin-bottom: 18px; }
 .ob-body b { color: var(--ink); }
@@ -1097,6 +1171,12 @@ video {
    Participants no longer choose anything, so the counter IS the navigation:
    it is the only signal of where they are and how much is left. */
 .run-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.run-head-right { display: inline-flex; align-items: center; gap: 10px; }
+/* Quick, always-visible "watch how it works" entry — a quiet neutral pill so
+   it never competes with the primary Save & Next, but it sits up top where a
+   first-timer looks the moment they're unsure. */
+.howto-top { flex: none; padding: 7px 12px; font-size: 13px; }
+.howto-top:hover { color: var(--teal); border-color: var(--teal); background: var(--teal-soft); }
 .run-bar {
   height: 4px;
   border-radius: 3px;
