@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=33">
+<link rel="stylesheet" href="styles.css?v=34">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -117,6 +117,7 @@ const SUPA_HEADERS = {
     onboardPage: 0,         // which of the demo video's stops the walkthrough is on
     obAtStop: false,        // true once the video has paused ON that stop's caption
     obBroken: false,        // the demo can't play at all — fall back to a plain stepper
+    obImmersiveTried: false,// fullscreen / orientation-lock attempted once per walkthrough open
     onboardReplay: false,   // true when the walkthrough was re-opened from the player ("How it works")
     drawerOpen: false,   // the ☰ side menu
     aboutReturn: null,   // the view to come back to when leaving the About page
@@ -189,7 +190,7 @@ const SUPA_HEADERS = {
         state.marked = null; state.saving = false; state.msg = ''; state.err = '';
         // A restored session skips the login screen, so the sign-in check
         // never runs for it — repeat the same per-name test here.
-        if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; }
+        if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; state.obImmersiveTried = false; }
       }
     } catch {}
   }
@@ -588,6 +589,7 @@ const SUPA_HEADERS = {
   // Skip, or reaching the last page's Start button, both end onboarding the
   // same way: gate it shut for this browser and drop into Collections.
   function finishOnboarding() {
+    obExitImmersive();   // drop fullscreen / orientation lock on the way out
     // Re-opened from the player ("How it works")? Just go back to the clip
     // they were on — don't touch the first-run gate or the queue.
     if (state.onboardReplay) {
@@ -668,7 +670,14 @@ const SUPA_HEADERS = {
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
     // The walkthrough's <video> is a fresh element on every full render —
     // wire up its stop-watcher and start it playing if the screen allows.
-    if (state.view === 'onboarding') syncOnboardVideo();
+    if (state.view === 'onboarding') {
+      syncOnboardVideo();
+      obMaybeShowRotate();
+      // Fullscreen needs a user gesture; the "How it works" tap renders
+      // synchronously inside that gesture, so this call rides it. First-run
+      // (after login) has no live gesture — it just fails quietly.
+      if (!state.obImmersiveTried) { state.obImmersiveTried = true; obEnterImmersive(); }
+    }
 
     // Replay the typing when the viewer ARRIVES at the login screen (initial
     // load or after logging out), not on a validation re-render.
@@ -1108,11 +1117,7 @@ const SUPA_HEADERS = {
              muted playsinline preload="auto"
              aria-label="A recorded walkthrough of the app: playing a clip, the green release flash, stepping frames, marking the colour change and saving."
              onerror="window.__obVideoFailed()"></video>
-      <div class="ob-loading"><span class="spin"></span> Loading the demo…</div>
-      <div class="rotate-prompt" role="status">
-        ${icon('retry', 30)}
-        <p>Rotate your device to landscape to watch the demo</p>
-      </div>`;
+      <div class="ob-loading"><span class="spin"></span> Loading the demo…</div>`;
   }
 
   /* ---------- demo playback ----------
@@ -1121,8 +1126,57 @@ const SUPA_HEADERS = {
      the <video> and lose its position, exactly like the player's mark panel. */
   const obVideo = () => document.getElementById('obDemoVideo');
 
-  function obPortraitPhone() {
-    return window.matchMedia('(max-width: 640px) and (orientation: portrait)').matches;
+  const obPhone = () => window.matchMedia('(max-width: 640px), (max-height: 640px)').matches;
+  const obPortraitPhone = () => window.matchMedia('(max-width: 640px) and (orientation: portrait)').matches;
+
+  /* On a phone the demo takes over the screen: go fullscreen (which is the
+     only way to drop the browser's own address bar), and ask the OS to lock
+     to landscape. Both are best-effort — fullscreen needs a user gesture (the
+     "How it works" tap provides one) and orientation lock only exists on some
+     browsers (Android yes, iOS no). Where the lock isn't available the CSS
+     below rotates the picture into landscape instead, so it is landscape
+     either way. Never touched on tablets or laptops. */
+  function obEnterImmersive() {
+    if (!obPhone()) return;
+    // Fullscreen the PAGE ROOT, not .ob-full — the browser's :fullscreen UA
+    // styles force the fullscreen element to fill the screen with transform
+    // reset, which would undo the rotate-to-landscape below. The root filling
+    // the screen still drops the address bar just the same.
+    const el = document.documentElement;
+    if (el && !document.fullscreenElement) {
+      const rq = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (rq) { try { const r = rq.call(el); if (r && r.catch) r.catch(() => {}); } catch {} }
+    }
+    const so = window.screen && screen.orientation;
+    if (so && so.lock) { try { const r = so.lock('landscape'); if (r && r.catch) r.catch(() => {}); } catch {} }
+  }
+  function obExitImmersive() {
+    const so = window.screen && screen.orientation;
+    if (so && so.unlock) { try { so.unlock(); } catch {} }
+    if (document.fullscreenElement) {
+      const ex = document.exitFullscreen || document.webkitExitFullscreen;
+      if (ex) { try { const r = ex.call(document); if (r && r.catch) r.catch(() => {}); } catch {} }
+    }
+  }
+
+  /* A phone held upright can't show landscape footage, so for the first two
+     seconds it shows a "turn your phone sideways" card instead of waiting
+     indefinitely for the sensor. After that the demo plays regardless —
+     rotated into landscape by CSS if the phone is still upright — so it is
+     never blocked on the person actually turning the device. Shown at most
+     once per open (guarded on the freshly-rendered .ob-full element). */
+  let obRotateTimer = null;
+  function obMaybeShowRotate() {
+    const full = document.querySelector('.ob-full');
+    if (!full || full.__rotateHandled) return;
+    full.__rotateHandled = true;
+    if (!obPortraitPhone()) return;
+    full.classList.add('rotate-intro');
+    clearTimeout(obRotateTimer);
+    obRotateTimer = setTimeout(() => {
+      document.querySelector('.ob-full')?.classList.remove('rotate-intro');
+      obMaybePlay();
+    }, 2000);
   }
 
   /* Polls the clock every animation frame while the demo runs, so it stops
@@ -1187,8 +1241,10 @@ const SUPA_HEADERS = {
   function obMaybePlay() {
     const v = obVideo();
     if (!v || state.obBroken) return;
-    if (obPortraitPhone() || prefersReducedMotion()) { v.pause(); return; }
+    if (prefersReducedMotion()) { v.pause(); return; }
     if (state.obAtStop) return;
+    // Held during the 2s "turn your phone" card, and while still buffering.
+    if (document.querySelector('.ob-full')?.classList.contains('rotate-intro')) { v.pause(); return; }
     if (document.querySelector('.ob-stage')?.classList.contains('loading')) return;
     v.play().catch(() => {});
   }
@@ -1301,6 +1357,11 @@ const SUPA_HEADERS = {
       <div class="ob-stage loading">
         ${onboardVideoHtml()}
         <div class="ob-overlay" id="obControls">${obControlsHtml()}</div>
+      </div>
+      <div class="rotate-prompt" role="status">
+        ${icon('retry', 34)}
+        <p>Turn your phone sideways</p>
+        <span class="rotate-sub">the demo plays in landscape</span>
       </div>
     </div>`;
   }
@@ -1872,7 +1933,7 @@ const SUPA_HEADERS = {
     // Walk through the explainer while the queue is being put together;
     // otherwise hold on a brief "preparing" card.
     if (hasOnboarded(name)) { state.view = 'loading'; }
-    else { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; }
+    else { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; state.obImmersiveTried = false; }
     render();
     await prepareQueue();
     // Don't yank someone out of the walkthrough just because the queue landed.
@@ -2014,6 +2075,7 @@ const SUPA_HEADERS = {
       state.onboardPage = 0;
       state.obAtStop = false;
       state.obBroken = false;
+      state.obImmersiveTried = false;
       state.view = 'onboarding';
       return render();
     }
