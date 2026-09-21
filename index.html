@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=31">
+<link rel="stylesheet" href="styles.css?v=32">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -1066,20 +1066,27 @@ const SUPA_HEADERS = {
      re-cutting the video only means editing this one line. */
   const VIDEO_STOPS = [4, 8, 14, 21, 24, 33];
 
-  /* Where the Back/Next buttons sit ON the picture at each stop, as a % of
-     the video frame, so they land beside that stop's caption instead of in
-     a box underneath. Measured off the actual frames: stops 1-4 caption the
-     right-hand column (buttons tuck into the clear strip under it), stops
-     5-6 caption the upper middle (buttons sit just below that). Percentages
-     because .ob-stage is cut to the video's exact 16:9, so they scale with
-     the picture on any screen. */
+  /* Where Back/Next sit ON the picture at each stop — INSIDE that stop's
+     green caption box, tucked into the clear strip under its last line of
+     text. Measured off the real frames (the green rectangle's bounds and
+     where its text ends), then inset a little from the box's bottom-right
+     corner. Percentages of the frame, because .ob-stage is cut to the
+     video's exact 16:9, so they land on the same spot at any screen size.
+
+        stop   green box            text ends   clear strip
+        0:04   x 67.4-97.6 y 51.7-73.8   65.6%      8.1%
+        0:08   x 67.4-97.6 y 51.7-73.8   69.1%      4.7%
+        0:14   x 67.0-98.0 y 48.5-76.9   67.0%      9.9%
+        0:21   x 67.0-98.0 y 48.5-76.9   63.1%     13.8%
+        0:24   x 34.8-66.2 y 14.4-41.3   32.4%      8.9%
+        0:33   x 35.5-65.8 y 14.8-39.0   28.1%     10.9%          */
   const STOP_BTN = [
-    { right: 2.5, top: 75.5 },    // 0:04
-    { right: 2.5, top: 75.5 },    // 0:08
-    { right: 2.5, top: 78.5 },    // 0:14
-    { right: 2.5, top: 78.5 },    // 0:21
-    { left: 35.5, top: 43 },      // 0:24
-    { left: 35.5, top: 40 }       // 0:33
+    { right: 3.6, bottom: 27.2 },   // 0:04
+    { right: 3.6, bottom: 27.2 },   // 0:08
+    { right: 3.2, bottom: 24.3 },   // 0:14
+    { right: 3.2, bottom: 24.3 },   // 0:21
+    { right: 35.0, bottom: 59.7 },  // 0:24
+    { right: 35.4, bottom: 62.0 }   // 0:33
   ];
   const stopBtnStyle = i => Object.entries(STOP_BTN[i] || STOP_BTN[0])
     .map(([k, v]) => `${k}:${v}%`).join(';');
@@ -1223,7 +1230,7 @@ const SUPA_HEADERS = {
       <div class="ob-actions" style="${stopBtnStyle(i)}">
         <button class="ob-btn back" onclick="window.__act('onboardback')" ${i === 0 ? 'disabled' : ''}
                 aria-label="Previous step">${icon('back', 15)}</button>
-        <button class="ob-btn ob-primary" onclick="window.__act('onboardnext')">
+        <button class="ob-btn ob-primary${state.obAtStop ? ' waiting' : ''}" onclick="window.__act('onboardnext')">
           ${state.obAtStop && isLast ? `${doneLabel} ${icon(doneIcon, 15)}` : `Next ${icon('fwd', 15)}`}
         </button>
       </div>`;

@@ -738,23 +738,34 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 }
 .ob-skip:hover { background: rgba(0,0,0,.8); color: #fff; }
 
-/* Back + Next, parked beside whichever caption is on screen (position set
-   per stop from STOP_BTN in index.html). */
-.ob-actions { position: absolute; display: flex; gap: .5em; align-items: center; }
+/* Back + Next, parked INSIDE the green caption box that's on screen, in the
+   clear strip under its last line (position set per stop from STOP_BTN in
+   index.html). Kept compact on purpose: the tightest of those strips is
+   only ~4.7% of the frame's height, so the button has to fit in it. */
+.ob-actions { position: absolute; display: flex; gap: .45em; align-items: center; }
 .ob-btn {
-  display: inline-flex; align-items: center; gap: .35em;
+  display: inline-flex; align-items: center; gap: .3em;
   font-family: 'Inter', sans-serif; font-weight: 700;
-  font-size: clamp(11px, 1.5vw, 15px);
-  padding: .6em 1.1em; border-radius: 999px;
+  font-size: clamp(10px, 1.25vw, 14px);
+  line-height: 1.1;
+  padding: .45em .9em; border-radius: 999px;
   border: none; cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0,0,0,.45);
+  box-shadow: 0 3px 12px rgba(0,0,0,.45);
   transition: transform .12s, background .15s, opacity .15s;
 }
 .ob-btn.ob-primary { background: var(--go); color: #06231a; }
 .ob-btn.ob-primary:hover { background: var(--go-2); transform: translateY(-1px); }
+/* Blinks while the demo is parked waiting to be told to carry on, so the
+   button is impossible to miss; stops the moment it's pressed and the next
+   segment starts playing. */
+.ob-btn.ob-primary.waiting { animation: obWaitBlink 1.15s ease-in-out infinite; }
+@keyframes obWaitBlink {
+  0%, 100% { box-shadow: 0 3px 12px rgba(0,0,0,.45), 0 0 0 0 rgba(255,255,255,.75); filter: brightness(1); }
+  50%      { box-shadow: 0 3px 12px rgba(0,0,0,.45), 0 0 0 .55em rgba(255,255,255,0); filter: brightness(1.22); }
+}
 .ob-btn.back {
   background: rgba(255,255,255,.16); color: #fff;
-  padding: .6em .8em;
+  padding: .45em .65em;
   backdrop-filter: blur(3px);
 }
 .ob-btn.back:hover:not(:disabled) { background: rgba(255,255,255,.3); }
@@ -788,6 +799,11 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 @media (prefers-reduced-motion: reduce) {
   .rotate-prompt .ic { animation: none; }
   .ob-btn { transition: none; }
+  /* No blinking, but keep a static ring so it's still the obvious next move. */
+  .ob-btn.ob-primary.waiting {
+    animation: none;
+    box-shadow: 0 3px 12px rgba(0,0,0,.45), 0 0 0 3px rgba(255,255,255,.8);
+  }
 }
 
 /* ---------- Icons ----------
