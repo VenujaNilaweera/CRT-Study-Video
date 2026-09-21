@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=28">
+<link rel="stylesheet" href="styles.css?v=29">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -664,6 +664,10 @@ const SUPA_HEADERS = {
     renderDrawer();
 
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
+    // Step 1's demo <video> is a fresh element every render (onboarding does
+    // a plain top-level render on every step change) — sync its play state
+    // to the current viewport each time it (re)appears.
+    if (state.view === 'onboarding' && (state.onboardPage || 0) === 0) syncOnboardVideo();
 
     // Replay the typing when the viewer ARRIVES at the login screen (initial
     // load or after logging out), not on a validation re-render.
@@ -1095,45 +1099,43 @@ const SUPA_HEADERS = {
   const prefersReducedMotion = () =>
     window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* A short, auto-looping "clip" that actually PLAYS the whole test — pressure
-     held, the green release flash, then the colour returning and the moment to
-     Mark — so a first-timer can watch it once and know exactly what to look
-     for. It is built from the real study frames with pure CSS timing rather
-     than a video file, so it plays identically on every device with no codec
-     or download to worry about (which matters for a study handed to a hundred
-     students on whatever phone or PC they happen to have). */
-  function demoReelHtml() {
-    return `<div class="demo-reel" role="img"
-         aria-label="Demonstration: the nail bed is pressed, the screen flashes green as pressure is released, then the colour returns — the moment to press Mark.">
-      <img class="dr-base" src="${OB_SHOT.press.src}" alt="" width="384" height="384" decoding="async">
-      <img class="dr-refill" src="${OB_SHOT.refill.src}" alt="" width="384" height="384" decoding="async">
-      <div class="dr-flash" aria-hidden="true"></div>
-      <div class="dr-flash-label" aria-hidden="true">Released · timing starts</div>
-      <div class="dr-mark" aria-hidden="true">${icon('dot', 12)} Mark now<span class="dr-ripple"></span></div>
-      <div class="dr-caps" aria-hidden="true">
-        <span class="dr-cap dr-cap1">Pressure is held on the nail bed…</span>
-        <span class="dr-cap dr-cap2">Released — the frame flashes <b>green</b></span>
-        <span class="dr-cap dr-cap3">Colour returns — press <b>Mark</b> here</span>
+  /* Step 1's demo: a real, landscape-shot recording of the test, rather than
+     a synthetic animation, so a first-timer watches the actual thing happen.
+     A narrow phone held upright can't show landscape footage at any useful
+     size, so on that one screen shape we show a "rotate your device" prompt
+     instead (CSS-only, see .rotate-prompt) — everything else (tablets,
+     laptops, a phone already turned sideways) just plays the video. */
+  function onboardVideoHtml() {
+    return `<div class="ob-video-wrap">
+      <video id="obDemoVideo" class="ob-video" src="assets/intro-demo.mp4"
+             muted playsinline loop
+             aria-label="Demonstration: the nail bed is pressed, the screen flashes green as pressure is released, then the colour returns — the moment to press Mark."
+             onerror="this.closest('.ob-video-wrap').classList.add('missing')"></video>
+      <div class="rotate-prompt" role="status">
+        ${icon('retry', 30)}
+        <p>Rotate your device to landscape to watch the demo</p>
       </div>
-      <span class="dr-badge" aria-hidden="true">${icon('fwd', 11)} demo · loops</span>
     </div>`;
   }
 
+  /* Plays the demo the moment it's actually watchable (landscape, or a
+     tablet/laptop — always wide enough regardless of orientation) and pauses
+     it rather than autoplaying invisibly behind the rotate prompt. Reduced-
+     motion viewers get a paused first frame instead of autoplay. Re-run on
+     every resize/orientation change so turning the phone mid-prompt starts
+     it without needing to reopen the walkthrough. */
+  function syncOnboardVideo() {
+    const v = document.getElementById('obDemoVideo');
+    if (!v) return;
+    const portraitPhone = window.matchMedia('(max-width: 640px) and (orientation: portrait)').matches;
+    if (portraitPhone || prefersReducedMotion()) { v.pause(); return; }
+    v.play().catch(() => {});
+  }
+  window.addEventListener('resize', syncOnboardVideo);
+  window.addEventListener('orientationchange', syncOnboardVideo);
+
   function onboardIllo(kind) {
-    if (kind === 'press') {
-      // A first-timer's first sight of the test should MOVE, so they see the
-      // green flash happen rather than having to imagine it — unless the
-      // viewer has asked for reduced motion, in which case fall back to the
-      // three still frames laid out in sequence.
-      if (prefersReducedMotion()) {
-        return `<div class="ob-scene ob-scene-press">
-          ${shot('press', 'Pressure held')}${obArrow}
-          ${shot('release', 'Released — green flash')}${obArrow}
-          ${shot('refill', 'Colour returns')}
-        </div>`;
-      }
-      return demoReelHtml();
-    }
+    if (kind === 'press') return onboardVideoHtml();
     if (kind === 'mark') {
       // Only the half that needs a response: the flash, then the moment to press.
       return `<div class="ob-scene ob-scene-mark">
