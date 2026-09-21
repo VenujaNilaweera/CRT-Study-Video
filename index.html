@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=32">
+<link rel="stylesheet" href="styles.css?v=33">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -116,6 +116,7 @@ const SUPA_HEADERS = {
     view: 'login', user: null, marked: null, saving: false, msg: '', err: '', speed: 1,
     onboardPage: 0,         // which of the demo video's stops the walkthrough is on
     obAtStop: false,        // true once the video has paused ON that stop's caption
+    obBroken: false,        // the demo can't play at all — fall back to a plain stepper
     onboardReplay: false,   // true when the walkthrough was re-opened from the player ("How it works")
     drawerOpen: false,   // the ☰ side menu
     aboutReturn: null,   // the view to come back to when leaving the About page
@@ -188,7 +189,7 @@ const SUPA_HEADERS = {
         state.marked = null; state.saving = false; state.msg = ''; state.err = '';
         // A restored session skips the login screen, so the sign-in check
         // never runs for it — repeat the same per-name test here.
-        if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; }
+        if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; }
       }
     } catch {}
   }
@@ -1074,19 +1075,19 @@ const SUPA_HEADERS = {
      video's exact 16:9, so they land on the same spot at any screen size.
 
         stop   green box            text ends   clear strip
-        0:04   x 67.4-97.6 y 51.7-73.8   65.6%      8.1%
-        0:08   x 67.4-97.6 y 51.7-73.8   69.1%      4.7%
-        0:14   x 67.0-98.0 y 48.5-76.9   67.0%      9.9%
-        0:21   x 67.0-98.0 y 48.5-76.9   63.1%     13.8%
-        0:24   x 34.8-66.2 y 14.4-41.3   32.4%      8.9%
-        0:33   x 35.5-65.8 y 14.8-39.0   28.1%     10.9%          */
+        0:04   x 67.4-97.6 y 44.2-69.8   60.4%      9.4%
+        0:08   x 67.4-97.6 y 44.2-69.8   64.3%      5.4%
+        0:14   x 67.0-98.0 y 40.6-73.4   62.0%     11.4%
+        0:21   x 67.0-98.0 y 40.6-73.4   57.5%     15.9%
+        0:24   x 34.8-66.2 y  1.2-32.4   22.0%     10.4%
+        0:33   x 35.5-65.8 y  1.7-29.5   17.0%     12.5%          */
   const STOP_BTN = [
-    { right: 3.6, bottom: 27.2 },   // 0:04
-    { right: 3.6, bottom: 27.2 },   // 0:08
-    { right: 3.2, bottom: 24.3 },   // 0:14
-    { right: 3.2, bottom: 24.3 },   // 0:21
-    { right: 35.0, bottom: 59.7 },  // 0:24
-    { right: 35.4, bottom: 62.0 }   // 0:33
+    { right: 3.6, bottom: 31.4 },   // 0:04
+    { right: 3.6, bottom: 31.4 },   // 0:08
+    { right: 3.2, bottom: 27.8 },   // 0:14
+    { right: 3.2, bottom: 27.8 },   // 0:21
+    { right: 35.0, bottom: 68.8 },  // 0:24
+    { right: 35.4, bottom: 71.7 }   // 0:33
   ];
   const stopBtnStyle = i => Object.entries(STOP_BTN[i] || STOP_BTN[0])
     .map(([k, v]) => `${k}:${v}%`).join(';');
@@ -1106,7 +1107,8 @@ const SUPA_HEADERS = {
     return `<video id="obDemoVideo" class="ob-video" src="assets/intro-demo.mp4"
              muted playsinline preload="auto"
              aria-label="A recorded walkthrough of the app: playing a clip, the green release flash, stepping frames, marking the colour change and saving."
-             onerror="this.closest('.ob-stage').classList.add('missing')"></video>
+             onerror="window.__obVideoFailed()"></video>
+      <div class="ob-loading"><span class="spin"></span> Loading the demo…</div>
       <div class="rotate-prompt" role="status">
         ${icon('retry', 30)}
         <p>Rotate your device to landscape to watch the demo</p>
@@ -1161,10 +1163,49 @@ const SUPA_HEADERS = {
       // The final stop sits on the last frame; if playback runs out first,
       // park there anyway rather than leaving the button stuck on "Next".
       v.addEventListener('ended', () => obPark(null));
+      /* Nothing starts until the browser says it has buffered enough to run
+         to the end without pausing (readyState 4 / canplaythrough) — the
+         demo stalling halfway through a caption is worse than waiting a
+         moment for it. The timer is a backstop: on a connection too slow to
+         ever promise that, start anyway rather than hang on a spinner. */
+      const ready = () => {
+        clearTimeout(v.__obWait);
+        document.querySelector('.ob-stage')?.classList.remove('loading');
+        // Buffering gave up and there is still nothing playable — fall back
+        // to the stepper so nobody is stranded on a spinner.
+        if (v.readyState < 3) return obFail();
+        obMaybePlay();
+      };
+      if (v.readyState >= 4) ready();
+      else {
+        v.addEventListener('canplaythrough', ready, { once: true });
+        v.__obWait = setTimeout(ready, 8000);
+      }
     }
-    if (obPortraitPhone() || prefersReducedMotion()) { v.pause(); return; }
-    if (!state.obAtStop) v.play().catch(() => {});
+    obMaybePlay();
   }
+  function obMaybePlay() {
+    const v = obVideo();
+    if (!v || state.obBroken) return;
+    if (obPortraitPhone() || prefersReducedMotion()) { v.pause(); return; }
+    if (state.obAtStop) return;
+    if (document.querySelector('.ob-stage')?.classList.contains('loading')) return;
+    v.play().catch(() => {});
+  }
+
+  /* The demo can't play (file missing, codec unsupported, connection gave
+     up). Rather than leave someone staring at a frozen frame with no way
+     on, show the placeholder and keep the stepper permanently available so
+     Next still walks the steps and still reaches Start / Back to clip. */
+  function obFail() {
+    if (state.obBroken) return;
+    state.obBroken = true;
+    const stage = document.querySelector('.ob-stage');
+    if (stage) { stage.classList.add('missing'); stage.classList.remove('loading'); }
+    state.obAtStop = true;
+    renderObControls();
+  }
+  window.__obVideoFailed = obFail;
   window.addEventListener('resize', syncOnboardVideo);
   window.addEventListener('orientationchange', syncOnboardVideo);
 
@@ -1197,21 +1238,25 @@ const SUPA_HEADERS = {
   function obPlaySegment(i) {
     const v = obVideo();
     state.onboardPage = Math.max(0, Math.min(obLastStep(), i));
-    state.obAtStop = false;
+    // With no playable video there is nothing to wait for, so stay parked —
+    // Next keeps working as a plain step-through.
+    state.obAtStop = !!state.obBroken;
     if (!v) return renderObControls();
     obSeek(v, obSegStart(state.onboardPage));
     renderObControls();
-    if (!obPortraitPhone() && !prefersReducedMotion()) v.play().catch(() => {});
+    obMaybePlay();
   }
 
+  /* Only ever acts when the demo is actually parked on a caption. A second
+     press (double-tap, held key) lands while it is already playing again
+     and is ignored, so playback can't be stuttered into pause/play/pause. */
   function obNext() {
-    // Mid-segment: jump straight to this step's caption rather than waiting.
-    if (!state.obAtStop) return obPark(VIDEO_STOPS[state.onboardPage]);
+    if (!state.obAtStop) return;
     if (state.onboardPage >= obLastStep()) return finishOnboarding();
     obPlaySegment(state.onboardPage + 1);
   }
   function obBack() {
-    if (state.onboardPage <= 0) return;
+    if (!state.obAtStop || state.onboardPage <= 0) return;
     obPlaySegment(state.onboardPage - 1);
   }
 
@@ -1225,15 +1270,22 @@ const SUPA_HEADERS = {
     // "Back to clip" (returns to the clip they paused on).
     const doneLabel = replay ? 'Back to clip' : 'Start';
     const doneIcon = replay ? 'fwd' : 'check';
-    return `<span class="ob-step" id="obEyebrow">Step ${i + 1} of ${VIDEO_STOPS.length}</span>
-      <button class="ob-skip" onclick="window.__act('onboardskip')">${replay ? 'Close' : 'Skip'}</button>
+    // While the demo is running there are no buttons at all — they appear
+    // only once it has stopped on a caption. That also means a press can't
+    // be repeated: the button is gone the instant it's used, and disables
+    // itself on the way out so a double-tap can't fire twice.
+    const actions = state.obAtStop ? `
       <div class="ob-actions" style="${stopBtnStyle(i)}">
         <button class="ob-btn back" onclick="window.__act('onboardback')" ${i === 0 ? 'disabled' : ''}
                 aria-label="Previous step">${icon('back', 15)}</button>
-        <button class="ob-btn ob-primary${state.obAtStop ? ' waiting' : ''}" onclick="window.__act('onboardnext')">
-          ${state.obAtStop && isLast ? `${doneLabel} ${icon(doneIcon, 15)}` : `Next ${icon('fwd', 15)}`}
+        <button class="ob-btn ob-primary waiting"
+                onclick="this.disabled=true;this.classList.remove('waiting');window.__act('onboardnext')">
+          ${isLast ? `${doneLabel} ${icon(doneIcon, 15)}` : `Next ${icon('fwd', 15)}`}
         </button>
-      </div>`;
+      </div>` : '';
+    return `<span class="ob-step" id="obEyebrow">Step ${i + 1} of ${VIDEO_STOPS.length}</span>
+      <button class="ob-skip" onclick="window.__act('onboardskip')">${replay ? 'Close' : 'Skip'}</button>
+      ${actions}`;
   }
   function renderObControls() {
     const el = document.getElementById('obControls');
@@ -1246,7 +1298,7 @@ const SUPA_HEADERS = {
      percentage lands on the same spot of the footage at any size. */
   function viewOnboarding() {
     return `<div class="ob-full">
-      <div class="ob-stage">
+      <div class="ob-stage loading">
         ${onboardVideoHtml()}
         <div class="ob-overlay" id="obControls">${obControlsHtml()}</div>
       </div>
@@ -1820,7 +1872,7 @@ const SUPA_HEADERS = {
     // Walk through the explainer while the queue is being put together;
     // otherwise hold on a brief "preparing" card.
     if (hasOnboarded(name)) { state.view = 'loading'; }
-    else { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; }
+    else { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; }
     render();
     await prepareQueue();
     // Don't yank someone out of the walkthrough just because the queue landed.
@@ -1961,6 +2013,7 @@ const SUPA_HEADERS = {
       state.onboardReplay = true;
       state.onboardPage = 0;
       state.obAtStop = false;
+      state.obBroken = false;
       state.view = 'onboarding';
       return render();
     }

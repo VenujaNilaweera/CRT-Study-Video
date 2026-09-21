@@ -709,14 +709,29 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   background: #000;
   display: flex; align-items: center; justify-content: center;
 }
+/* The recording is 1920x936 once its letterbox band is cropped off, so the
+   stage is cut to that exact ratio (2.0513:1) and grows to whichever of the
+   viewport's width or height runs out first. No bars of our own, and every
+   overlay percentage lands on the same spot of the footage at any size. */
 .ob-stage {
+  --ob-ar: 2.0513;
   position: relative;
-  width: min(100vw, calc(100vh * 16 / 9));
-  height: min(100vh, calc(100vw * 9 / 16));
+  width: min(100vw, calc(100vh * var(--ob-ar)));
+  height: min(100vh, calc(100vw / var(--ob-ar)));
   background: #000;
   overflow: hidden;
 }
 .ob-video { display: block; width: 100%; height: 100%; object-fit: fill; }
+
+/* Nothing plays until it's buffered; this sits over the frame until then. */
+.ob-loading {
+  position: absolute; inset: 0; display: none;
+  align-items: center; justify-content: center; gap: 10px;
+  color: #cfe; font-family: var(--mono); font-size: 13px; letter-spacing: .4px;
+  background: #000;
+}
+.ob-stage.loading .ob-loading { display: flex; }
+.ob-stage.loading .ob-overlay { display: none; }
 .ob-overlay { position: absolute; inset: 0; pointer-events: none; }
 .ob-overlay > * { pointer-events: auto; }
 
@@ -1235,7 +1250,7 @@ body[data-view="player"] .run-bar { flex: none; }
   border-radius: var(--radius);
   z-index: 2;
 }
-.vid-loading .spin {
+.vid-loading .spin, .ob-loading .spin {
   width: 15px; height: 15px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
   animation: spin .7s linear infinite;
