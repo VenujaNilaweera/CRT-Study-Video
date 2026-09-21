@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=34">
+<link rel="stylesheet" href="styles.css?v=35">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -114,6 +114,8 @@ const SUPA_HEADERS = {
   const hdrActions = document.getElementById('hdrActions');
   let state = {
     view: 'login', user: null, marked: null, saving: false, msg: '', err: '', speed: 1,
+    obPhase: 'cards',       // walkthrough phase: 'cards' (3 pages) then 'video'
+    cardPage: 0,            // which of the 3 intro cards is showing
     onboardPage: 0,         // which of the demo video's stops the walkthrough is on
     obAtStop: false,        // true once the video has paused ON that stop's caption
     obBroken: false,        // the demo can't play at all — fall back to a plain stepper
@@ -190,7 +192,7 @@ const SUPA_HEADERS = {
         state.marked = null; state.saving = false; state.msg = ''; state.err = '';
         // A restored session skips the login screen, so the sign-in check
         // never runs for it — repeat the same per-name test here.
-        if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; state.obImmersiveTried = false; }
+        if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.obPhase = 'cards'; state.cardPage = 0; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; state.obImmersiveTried = false; }
       }
     } catch {}
   }
@@ -670,12 +672,11 @@ const SUPA_HEADERS = {
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
     // The walkthrough's <video> is a fresh element on every full render —
     // wire up its stop-watcher and start it playing if the screen allows.
-    if (state.view === 'onboarding') {
+    if (state.view === 'onboarding' && state.obPhase === 'video') {
       syncOnboardVideo();
       obMaybeShowRotate();
-      // Fullscreen needs a user gesture; the "How it works" tap renders
-      // synchronously inside that gesture, so this call rides it. First-run
-      // (after login) has no live gesture — it just fails quietly.
+      // Fullscreen needs a user gesture; the card's "Watch the demo" tap
+      // renders synchronously inside that gesture, so this call rides it.
       if (!state.obImmersiveTried) { state.obImmersiveTried = true; obEnterImmersive(); }
     }
 
@@ -1068,7 +1069,104 @@ const SUPA_HEADERS = {
      after each participant's first sign-in (gated per name, so everyone who
      as INTRO_KEY for the login typing animation). Skippable at any point;
      uses a shared device still gets it). Skippable at any point.
+
+     Two phases: three illustrated cards (Next / Next), then the recorded
+     video demo that auto-plays. Cards explain in words + stills; the video
+     shows the real thing. Both share the same Skip and the same finish.
      ========================================================================= */
+  const ONBOARD_PAGES = [
+    {
+      eyebrow: 'Step 1 of 3 · Watch',
+      title: 'What you’re watching',
+      body: 'Pressure is held on the nail bed, then released. The screen flashes <b>green</b> for a moment at the release — that is when timing starts.',
+      illo: 'press'
+    },
+    {
+      eyebrow: 'Step 2 of 3 · Respond',
+      title: 'What to do',
+      body: 'The instant the colour returns, press <b>Mark colour change</b>. Then press <b>Save &amp; Next</b>.',
+      illo: 'mark'
+    },
+    {
+      eyebrow: 'Step 3 of 3 · Begin',
+      title: 'Your clips come to you',
+      body: `Clips arrive one after another in sets of <b>${SET_SIZE}</b> — nothing to choose, nothing repeated, everything saved as you go. If a clip won't play, just press <b>Skip clip</b> to move on to the next one.`,
+      illo: 'pick'
+    }
+  ];
+
+  /* Each card is illustrated with real frames of a study recording rather than
+     a drawing, so it shows exactly what the clip will look like. The green
+     frame is the same 3-frame, 50%-green release flash studio.py burns in. */
+  const OB_SHOT = {
+    press:   { src: 'assets/crt-press.jpg?v=14',   alt: 'A glass piece pressing down on the nail bed, arrows showing the pressure' },
+    release: { src: 'assets/crt-release.jpg?v=14', alt: 'The moment of release, the frame flashing green' },
+    refill:  { src: 'assets/crt-refill.jpg?v=14',  alt: 'The nail bed a moment later, its colour returned' }
+  };
+  const shot = (k, cap) => `<figure class="ob-shot">
+      <img src="${OB_SHOT[k].src}" alt="${OB_SHOT[k].alt}" width="384" height="384"
+           loading="eager" decoding="async">
+      <figcaption>${cap}</figcaption>
+    </figure>`;
+  const obArrow = `<span class="ob-arrow" aria-hidden="true">${icon('fwd', 15)}</span>`;
+
+  function onboardIllo(kind) {
+    if (kind === 'press') {
+      return `<div class="ob-scene ob-scene-press">
+        ${shot('press', 'Pressure held')}${obArrow}
+        ${shot('release', 'Released — green flash')}${obArrow}
+        ${shot('refill', 'Colour returns')}
+      </div>`;
+    }
+    if (kind === 'mark') {
+      return `<div class="ob-scene ob-scene-mark">
+        ${shot('release', 'Green flash')}${obArrow}${shot('refill', 'Mark here')}
+        <div class="ob-mark-side">
+          <div class="ob-mini-mark">${icon('dot', 11)} Mark<span class="ob-ripple"></span></div>
+          <div class="ob-mini-result">0.86s marked</div>
+        </div>
+      </div>`;
+    }
+    const dots = Array.from({ length: SET_SIZE },
+      (_, i) => `<span style="animation-delay:${(i * 0.26).toFixed(2)}s"></span>`).join('');
+    const strip = [1, 2, 3].map(n =>
+      `<img src="assets/crt-thumb${n}.jpg?v=14" alt="" width="192" height="192" loading="lazy" decoding="async">`
+    ).join('') + `<span class="ob-strip-more" aria-hidden="true">&hellip;</span>`
+      + `<img src="assets/crt-thumb4.jpg?v=14" alt="" width="192" height="192" loading="lazy" decoding="async">`;
+    return `<div class="ob-scene ob-scene-pick">
+      <div class="ob-set-pill">${icon('dot', 10)} one set &middot; ${SET_SIZE} clips</div>
+      <div class="ob-set-dots">${dots}</div>
+      <div class="ob-strip">${strip}</div>
+    </div>`;
+  }
+
+  /* Phase 1: the three cards. The last card's Next hands over to the video. */
+  function viewOnboardingCards() {
+    const page = Math.max(0, Math.min(ONBOARD_PAGES.length - 1, state.cardPage || 0));
+    const p = ONBOARD_PAGES[page];
+    const isLast = page === ONBOARD_PAGES.length - 1;
+    const dots = ONBOARD_PAGES.map((_, i) =>
+      `<button class="ob-dot ${i === page ? 'active' : ''}" aria-label="Go to step ${i + 1}"
+         aria-current="${i === page ? 'true' : 'false'}" onclick="window.__act('cardgoto',${i})"></button>`
+    ).join('');
+    return `<div class="onboard-layout">
+      <div class="card onboard-card">
+        <div class="ob-top">
+          <span class="ob-eyebrow">${p.eyebrow}</span>
+          <button class="ob-skip" onclick="window.__act('onboardskip')">${state.onboardReplay ? 'Close' : 'Skip'}</button>
+        </div>
+        <div class="ob-illo-wrap">${onboardIllo(p.illo)}</div>
+        <h2 class="ob-title">${p.title}</h2>
+        <p class="ob-body">${p.body}</p>
+        <div class="ob-dots">${dots}</div>
+        <div class="ob-nav">
+          <button class="btn neutral" onclick="window.__act('cardback')" ${page === 0 ? 'disabled' : ''}>${icon('back', 16)} Back</button>
+          <button class="btn ob-primary" onclick="window.__act('cardnext')">${isLast ? 'Watch the demo' : 'Next'} ${icon('fwd', 16)}</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
   /* The walkthrough IS the recorded demo. It plays, stopping itself at each
      of these points (seconds) so the caption burned into that part of the
      footage can be read; Next resumes to the following one. The last stop is
@@ -1312,7 +1410,15 @@ const SUPA_HEADERS = {
     obPlaySegment(state.onboardPage + 1);
   }
   function obBack() {
-    if (!state.obAtStop || state.onboardPage <= 0) return;
+    if (!state.obAtStop) return;
+    // Back from the very first video stop returns to the last card.
+    if (state.onboardPage <= 0) {
+      obExitImmersive();
+      state.obPhase = 'cards';
+      state.cardPage = ONBOARD_PAGES.length - 1;
+      state.obImmersiveTried = false;
+      return render();
+    }
     obPlaySegment(state.onboardPage - 1);
   }
 
@@ -1332,8 +1438,8 @@ const SUPA_HEADERS = {
     // itself on the way out so a double-tap can't fire twice.
     const actions = state.obAtStop ? `
       <div class="ob-actions" style="${stopBtnStyle(i)}">
-        <button class="ob-btn back" onclick="window.__act('onboardback')" ${i === 0 ? 'disabled' : ''}
-                aria-label="Previous step">${icon('back', 15)}</button>
+        <button class="ob-btn back" onclick="window.__act('onboardback')"
+                aria-label="${i === 0 ? 'Back to the cards' : 'Previous step'}">${icon('back', 15)}</button>
         <button class="ob-btn ob-primary waiting"
                 onclick="this.disabled=true;this.classList.remove('waiting');window.__act('onboardnext')">
           ${isLast ? `${doneLabel} ${icon(doneIcon, 15)}` : `Next ${icon('fwd', 15)}`}
@@ -1352,7 +1458,7 @@ const SUPA_HEADERS = {
      video's exact 16:9 and sized to whichever of width/height runs out
      first, so the picture is as big as the device allows and every overlay
      percentage lands on the same spot of the footage at any size. */
-  function viewOnboarding() {
+  function viewOnboardingVideo() {
     return `<div class="ob-full">
       <div class="ob-stage loading">
         ${onboardVideoHtml()}
@@ -1364,6 +1470,11 @@ const SUPA_HEADERS = {
         <span class="rotate-sub">the demo plays in landscape</span>
       </div>
     </div>`;
+  }
+
+  // Phase 1 = cards, phase 2 = the auto-playing video demo.
+  function viewOnboarding() {
+    return state.obPhase === 'video' ? viewOnboardingVideo() : viewOnboardingCards();
   }
 
   /* ---------- between-clip screens ----------
@@ -1886,12 +1997,13 @@ const SUPA_HEADERS = {
     if (state.view !== 'onboarding') return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    const cards = state.obPhase !== 'video';
     if (e.key === 'ArrowRight') {
       e.preventDefault();
-      window.__act('onboardnext');   // handles both "resume" and the final "Done"
+      window.__act(cards ? 'cardnext' : 'onboardnext');
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      window.__act('onboardback');
+      window.__act(cards ? 'cardback' : 'onboardback');
     } else if (e.key === 'Escape') {
       e.preventDefault();
       window.__act('onboardskip');
@@ -1933,7 +2045,7 @@ const SUPA_HEADERS = {
     // Walk through the explainer while the queue is being put together;
     // otherwise hold on a brief "preparing" card.
     if (hasOnboarded(name)) { state.view = 'loading'; }
-    else { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; state.obImmersiveTried = false; }
+    else { state.view = 'onboarding'; state.obPhase = 'cards'; state.cardPage = 0; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; state.obImmersiveTried = false; }
     render();
     await prepareQueue();
     // Don't yank someone out of the walkthrough just because the queue landed.
@@ -2072,6 +2184,8 @@ const SUPA_HEADERS = {
        demo) on demand from inside the player, then returns to the same clip. */
     if (act === 'howto') {
       state.onboardReplay = true;
+      state.obPhase = 'cards';
+      state.cardPage = 0;
       state.onboardPage = 0;
       state.obAtStop = false;
       state.obBroken = false;
@@ -2079,8 +2193,20 @@ const SUPA_HEADERS = {
       state.view = 'onboarding';
       return render();
     }
-    // These drive the demo video, so they must NOT render() — that would
-    // rebuild the <video> and throw away its position.
+    // ---- phase 1: the three cards ----
+    if (act === 'cardnext') {
+      if (state.cardPage < ONBOARD_PAGES.length - 1) { state.cardPage += 1; return render(); }
+      // Last card → hand over to the video, which auto-plays.
+      state.obPhase = 'video';
+      state.onboardPage = 0;
+      state.obAtStop = false;
+      state.obImmersiveTried = false;   // re-armed so fullscreen rides THIS tap
+      return render();
+    }
+    if (act === 'cardback') { state.cardPage = Math.max(0, (state.cardPage || 0) - 1); return render(); }
+    if (act === 'cardgoto') { state.cardPage = Math.max(0, Math.min(ONBOARD_PAGES.length - 1, Number(id) || 0)); return render(); }
+    // ---- phase 2: the demo video ---- (must NOT render() — that rebuilds
+    // the <video> and throws away its position).
     if (act === 'onboardnext') return obNext();
     if (act === 'onboardback') return obBack();
     if (act === 'onboardgoto') return obPlaySegment(Number(id) || 0);
