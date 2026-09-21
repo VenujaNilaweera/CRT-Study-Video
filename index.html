@@ -1411,8 +1411,11 @@ const SUPA_HEADERS = {
   }
   function obBack() {
     if (!state.obAtStop) return;
-    // Back from the very first video stop returns to the last card.
     if (state.onboardPage <= 0) {
+      // On a "How it works" replay there are no cards to go back to, so the
+      // first stop is the start — nothing to do. On first run, Back from the
+      // very first video stop returns to the last card.
+      if (state.onboardReplay) return;
       obExitImmersive();
       state.obPhase = 'cards';
       state.cardPage = ONBOARD_PAGES.length - 1;
@@ -1439,7 +1442,8 @@ const SUPA_HEADERS = {
     const actions = state.obAtStop ? `
       <div class="ob-actions" style="${stopBtnStyle(i)}">
         <button class="ob-btn back" onclick="window.__act('onboardback')"
-                aria-label="${i === 0 ? 'Back to the cards' : 'Previous step'}">${icon('back', 15)}</button>
+                ${i === 0 && replay ? 'disabled' : ''}
+                aria-label="${i === 0 ? (replay ? 'Back' : 'Back to the cards') : 'Previous step'}">${icon('back', 15)}</button>
         <button class="ob-btn ob-primary waiting"
                 onclick="this.disabled=true;this.classList.remove('waiting');window.__act('onboardnext')">
           ${isLast ? `${doneLabel} ${icon(doneIcon, 15)}` : `Next ${icon('fwd', 15)}`}
@@ -2183,8 +2187,10 @@ const SUPA_HEADERS = {
     /* "How it works" — replays the first-run walkthrough (with its playable
        demo) on demand from inside the player, then returns to the same clip. */
     if (act === 'howto') {
+      // "How it works" replays only the recorded demo — the three intro
+      // cards are a first-run-only welcome, not part of the replay.
       state.onboardReplay = true;
-      state.obPhase = 'cards';
+      state.obPhase = 'video';
       state.cardPage = 0;
       state.onboardPage = 0;
       state.obAtStop = false;
