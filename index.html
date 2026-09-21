@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=30">
+<link rel="stylesheet" href="styles.css?v=31">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -1065,6 +1065,24 @@ const SUPA_HEADERS = {
      the end of the video, where Next becomes "Done". Pulled out as data so
      re-cutting the video only means editing this one line. */
   const VIDEO_STOPS = [4, 8, 14, 21, 24, 33];
+
+  /* Where the Back/Next buttons sit ON the picture at each stop, as a % of
+     the video frame, so they land beside that stop's caption instead of in
+     a box underneath. Measured off the actual frames: stops 1-4 caption the
+     right-hand column (buttons tuck into the clear strip under it), stops
+     5-6 caption the upper middle (buttons sit just below that). Percentages
+     because .ob-stage is cut to the video's exact 16:9, so they scale with
+     the picture on any screen. */
+  const STOP_BTN = [
+    { right: 2.5, top: 75.5 },    // 0:04
+    { right: 2.5, top: 75.5 },    // 0:08
+    { right: 2.5, top: 78.5 },    // 0:14
+    { right: 2.5, top: 78.5 },    // 0:21
+    { left: 35.5, top: 43 },      // 0:24
+    { left: 35.5, top: 40 }       // 0:33
+  ];
+  const stopBtnStyle = i => Object.entries(STOP_BTN[i] || STOP_BTN[0])
+    .map(([k, v]) => `${k}:${v}%`).join(';');
   const obSegStart = i => (i <= 0 ? 0 : VIDEO_STOPS[i - 1]);
   const obLastStep = () => VIDEO_STOPS.length - 1;
 
@@ -1078,16 +1096,14 @@ const SUPA_HEADERS = {
      instead (CSS-only, see .rotate-prompt) — everything else (tablets,
      laptops, a phone already turned sideways) just plays the video. */
   function onboardVideoHtml() {
-    return `<div class="ob-video-wrap">
-      <video id="obDemoVideo" class="ob-video" src="assets/intro-demo.mp4"
+    return `<video id="obDemoVideo" class="ob-video" src="assets/intro-demo.mp4"
              muted playsinline preload="auto"
              aria-label="A recorded walkthrough of the app: playing a clip, the green release flash, stepping frames, marking the colour change and saving."
-             onerror="this.closest('.ob-video-wrap').classList.add('missing')"></video>
+             onerror="this.closest('.ob-stage').classList.add('missing')"></video>
       <div class="rotate-prompt" role="status">
         ${icon('retry', 30)}
         <p>Rotate your device to landscape to watch the demo</p>
-      </div>
-    </div>`;
+      </div>`;
   }
 
   /* ---------- demo playback ----------
@@ -1202,16 +1218,13 @@ const SUPA_HEADERS = {
     // "Back to clip" (returns to the clip they paused on).
     const doneLabel = replay ? 'Back to clip' : 'Start';
     const doneIcon = replay ? 'fwd' : 'check';
-    const dots = VIDEO_STOPS.map((_, n) =>
-      `<button class="ob-dot ${n === i ? 'active' : ''}" aria-label="Go to step ${n + 1}"
-         aria-current="${n === i ? 'true' : 'false'}" onclick="window.__act('onboardgoto',${n})"></button>`
-    ).join('');
-    return `<span class="ob-eyebrow" id="obEyebrow">Step ${i + 1} of ${VIDEO_STOPS.length}</span>
-      <div class="ob-dots">${dots}</div>
-      <div class="ob-nav">
-        <button class="btn neutral" onclick="window.__act('onboardback')" ${i === 0 ? 'disabled' : ''}>${icon('back', 16)} Back</button>
-        <button class="btn ob-primary" onclick="window.__act('onboardnext')">
-          ${state.obAtStop && isLast ? `${doneLabel} ${icon(doneIcon, 16)}` : `Next ${icon('fwd', 16)}`}
+    return `<span class="ob-step" id="obEyebrow">Step ${i + 1} of ${VIDEO_STOPS.length}</span>
+      <button class="ob-skip" onclick="window.__act('onboardskip')">${replay ? 'Close' : 'Skip'}</button>
+      <div class="ob-actions" style="${stopBtnStyle(i)}">
+        <button class="ob-btn back" onclick="window.__act('onboardback')" ${i === 0 ? 'disabled' : ''}
+                aria-label="Previous step">${icon('back', 15)}</button>
+        <button class="ob-btn ob-primary" onclick="window.__act('onboardnext')">
+          ${state.obAtStop && isLast ? `${doneLabel} ${icon(doneIcon, 15)}` : `Next ${icon('fwd', 15)}`}
         </button>
       </div>`;
   }
@@ -1220,17 +1233,15 @@ const SUPA_HEADERS = {
     if (el) el.innerHTML = obControlsHtml();
   }
 
+  /* Full-screen: the recording IS the screen. .ob-stage is cut to the
+     video's exact 16:9 and sized to whichever of width/height runs out
+     first, so the picture is as big as the device allows and every overlay
+     percentage lands on the same spot of the footage at any size. */
   function viewOnboarding() {
-    const replay = state.onboardReplay;   // opened from the player, not first-run
-    return `<div class="onboard-layout">
-      <div class="card onboard-card">
-        <div class="ob-top">
-          <span class="ob-kicker">How it works</span>
-          <button class="ob-skip" onclick="window.__act('onboardskip')">${replay ? 'Close' : 'Skip'}</button>
-        </div>
-        <div class="ob-illo-wrap">${onboardVideoHtml()}</div>
-        <p class="ob-body">The demo pauses at each step — read it, then press <b>Next</b> to carry on.</p>
-        <div id="obControls">${obControlsHtml()}</div>
+    return `<div class="ob-full">
+      <div class="ob-stage">
+        ${onboardVideoHtml()}
+        <div class="ob-overlay" id="obControls">${obControlsHtml()}</div>
       </div>
     </div>`;
   }

@@ -699,70 +699,73 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
    after the first login. Same card/shadow/radius language as the rest of the
    app; each page's illustration is built from plain shapes, no video asset.
    ========================================================================== */
-.onboard-layout {
-  display: flex;
-  justify-content: center;
-  padding: clamp(10px, 3vh, 30px) 0;
+/* ---- The walkthrough: a full-screen recording with controls on it ----
+   The recording IS the screen — no card, no dialog. .ob-stage is cut to the
+   video's exact 16:9 and sized to whichever of width/height runs out first,
+   so the picture is as large as the device allows AND every overlay
+   percentage lands on the same spot of the footage at any size. */
+.ob-full {
+  position: fixed; inset: 0; z-index: 90;
+  background: #000;
+  display: flex; align-items: center; justify-content: center;
 }
-.onboard-card {
-  width: 100%;
-  max-width: 480px;
-  margin: 0;
-  animation: riseIn .45s cubic-bezier(.22,.8,.3,1) both;
+.ob-stage {
+  position: relative;
+  width: min(100vw, calc(100vh * 16 / 9));
+  height: min(100vh, calc(100vw * 9 / 16));
+  background: #000;
+  overflow: hidden;
 }
-.ob-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.ob-eyebrow {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 1.6px;
-  text-transform: uppercase;
-  color: var(--teal);
+.ob-video { display: block; width: 100%; height: 100%; object-fit: fill; }
+.ob-overlay { position: absolute; inset: 0; pointer-events: none; }
+.ob-overlay > * { pointer-events: auto; }
+
+/* Step counter and Skip ride in the recording's own letterbox band, clear
+   of the picture. */
+.ob-step {
+  position: absolute; top: 2.5%; left: 2%;
+  font-family: var(--mono); font-size: clamp(9px, 1.15vw, 12px);
+  letter-spacing: .5px; color: #dff;
+  background: rgba(0,0,0,.5); padding: .35em .8em; border-radius: 20px;
 }
 .ob-skip {
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  font-family: 'Inter', sans-serif;
-  font-size: 12.5px;
-  cursor: pointer;
-  padding: 5px 7px;
-  border-radius: 6px;
-  transition: color .15s, background .15s;
+  position: absolute; top: 2.5%; right: 2%;
+  background: rgba(0,0,0,.5); border: none; cursor: pointer;
+  color: #dff; font-family: 'Inter', sans-serif;
+  font-size: clamp(9px, 1.15vw, 12px);
+  padding: .35em .9em; border-radius: 20px;
+  transition: background .15s, color .15s;
 }
-.ob-skip:hover { color: var(--ink); background: var(--surface-2); }
+.ob-skip:hover { background: rgba(0,0,0,.8); color: #fff; }
 
-.ob-illo-wrap {
-  background: #04121a;   /* the illustrations' own backdrop */
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  margin-bottom: 18px;
-  overflow: hidden;
+/* Back + Next, parked beside whichever caption is on screen (position set
+   per stop from STOP_BTN in index.html). */
+.ob-actions { position: absolute; display: flex; gap: .5em; align-items: center; }
+.ob-btn {
+  display: inline-flex; align-items: center; gap: .35em;
+  font-family: 'Inter', sans-serif; font-weight: 700;
+  font-size: clamp(11px, 1.5vw, 15px);
+  padding: .6em 1.1em; border-radius: 999px;
+  border: none; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0,0,0,.45);
+  transition: transform .12s, background .15s, opacity .15s;
 }
-/* Height follows the photographs rather than being fixed, so a picture is
-   never letterboxed or cropped to fit a box drawn for shapes. */
+.ob-btn.ob-primary { background: var(--go); color: #06231a; }
+.ob-btn.ob-primary:hover { background: var(--go-2); transform: translateY(-1px); }
+.ob-btn.back {
+  background: rgba(255,255,255,.16); color: #fff;
+  padding: .6em .8em;
+  backdrop-filter: blur(3px);
+}
+.ob-btn.back:hover:not(:disabled) { background: rgba(255,255,255,.3); }
+.ob-btn.back:disabled { opacity: .3; cursor: default; }
 
-/* ---- Step 1 demo video + rotate prompt ----
-   Step 1 is a real, landscape-shot recording of the test rather than a
-   synthetic animation, so it needs real width to read. On a narrow phone
-   held upright there isn't room for that — rather than squeeze it into a
-   portrait strip, ask for a rotate instead. Tablets and laptops are never
-   narrow-AND-portrait at once, so they always just see the video. */
-.ob-video-wrap {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  margin: 0 auto;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  background: #04121a;
-}
-.ob-video { display: block; width: 100%; height: 100%; object-fit: contain; background: #04121a; }
 .rotate-prompt { display: none; }   /* shown only on a small portrait screen, below */
 
 /* A video that failed to load (most likely: not added to assets/ yet)
    degrades to a labelled empty frame, the same way about-photo does. */
-.ob-video-wrap.missing .ob-video { display: none; }
-.ob-video-wrap.missing::before {
+.ob-stage.missing .ob-video { display: none; }
+.ob-stage.missing::before {
   content: "Demo video not added yet";
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
@@ -771,45 +774,21 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 }
 
 @media (max-width: 640px) and (orientation: portrait) {
-  .ob-video-wrap.missing::before { display: none; }
-  .ob-video { display: none; }
+  .ob-stage.missing::before { display: none; }
+  .ob-video, .ob-actions { display: none; }
   .rotate-prompt {
-    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
     position: absolute; inset: 0;
     padding: 20px; text-align: center;
-    color: var(--ink);
   }
   .rotate-prompt .ic { color: var(--teal); animation: rotateHint 1.6s ease-in-out infinite; }
-  .rotate-prompt p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+  .rotate-prompt p { margin: 0; font-size: 13.5px; line-height: 1.5; color: #cfe; }
 }
 @keyframes rotateHint { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-90deg); } }
 @media (prefers-reduced-motion: reduce) {
   .rotate-prompt .ic { animation: none; }
+  .ob-btn { transition: none; }
 }
-
-.ob-body { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin-bottom: 18px; }
-.ob-body b { color: var(--ink); }
-
-.ob-dots { display: flex; justify-content: center; gap: 8px; margin-bottom: 18px; }
-.ob-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  border: none; padding: 0; cursor: pointer;
-  background: var(--line);
-  transition: background .2s, width .2s;
-}
-.ob-dot:hover { background: var(--teal-2); }
-.ob-dot.active { background: var(--teal); width: 22px; border-radius: 5px; }
-
-/* The walkthrough's one-line kicker, above the video. */
-.ob-kicker {
-  font-family: var(--mono); font-size: 11px; letter-spacing: .6px;
-  text-transform: uppercase; color: var(--teal); font-weight: 700;
-}
-@media (prefers-reduced-motion: reduce) { .onboard-card { animation: none !important; } }
-
-.ob-nav { display: flex; gap: 10px; }
-.ob-nav .btn.neutral { flex: 0 0 auto; }
-.ob-primary { flex: 1; }
 
 /* ---------- Icons ----------
    Inline SVG that inherits currentColor, so one icon works in both themes.
