@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=29">
+<link rel="stylesheet" href="styles.css?v=30">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -114,7 +114,8 @@ const SUPA_HEADERS = {
   const hdrActions = document.getElementById('hdrActions');
   let state = {
     view: 'login', user: null, marked: null, saving: false, msg: '', err: '', speed: 1,
-    onboardPage: 0,
+    onboardPage: 0,         // which of the demo video's stops the walkthrough is on
+    obAtStop: false,        // true once the video has paused ON that stop's caption
     onboardReplay: false,   // true when the walkthrough was re-opened from the player ("How it works")
     drawerOpen: false,   // the ☰ side menu
     aboutReturn: null,   // the view to come back to when leaving the About page
@@ -187,7 +188,7 @@ const SUPA_HEADERS = {
         state.marked = null; state.saving = false; state.msg = ''; state.err = '';
         // A restored session skips the login screen, so the sign-in check
         // never runs for it — repeat the same per-name test here.
-        if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.onboardPage = 0; }
+        if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; }
       }
     } catch {}
   }
@@ -664,10 +665,9 @@ const SUPA_HEADERS = {
     renderDrawer();
 
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
-    // Step 1's demo <video> is a fresh element every render (onboarding does
-    // a plain top-level render on every step change) — sync its play state
-    // to the current viewport each time it (re)appears.
-    if (state.view === 'onboarding' && (state.onboardPage || 0) === 0) syncOnboardVideo();
+    // The walkthrough's <video> is a fresh element on every full render —
+    // wire up its stop-watcher and start it playing if the screen allows.
+    if (state.view === 'onboarding') syncOnboardVideo();
 
     // Replay the typing when the viewer ARRIVES at the login screen (initial
     // load or after logging out), not on a validation re-render.
@@ -1059,42 +1059,14 @@ const SUPA_HEADERS = {
      as INTRO_KEY for the login typing animation). Skippable at any point;
      uses a shared device still gets it). Skippable at any point.
      ========================================================================= */
-  const ONBOARD_PAGES = [
-    {
-      eyebrow: 'Step 1 of 3 · Watch',
-      title: 'Watch how it works',
-      body: 'Here is the whole test playing. Pressure is held on the nail bed, then released — the screen flashes <b>green</b> for a moment at the release, and that is when timing starts. Watch the colour drain, then return.',
-      illo: 'press'
-    },
-    {
-      eyebrow: 'Step 2 of 3 · Respond',
-      title: 'What to do',
-      body: 'The instant the colour returns, press <b>Mark colour change</b>. Then press <b>Save &amp; Next</b>.',
-      illo: 'mark'
-    },
-    {
-      eyebrow: 'Step 3 of 3 · Begin',
-      title: 'Your clips come to you',
-      body: `Clips arrive one after another in sets of <b>${SET_SIZE}</b> — nothing to choose, nothing repeated, everything saved as you go. If a clip won't play, just press <b>Skip clip</b> to move on to the next one.`,
-      illo: 'pick'
-    }
-  ];
-
-  /* Each step is illustrated with real frames of a study recording rather than
-     a drawing, so the walkthrough shows exactly what the clip will look like.
-     The green frame is not a graphic either: it is the same 3-frame, 50%-green
-     release flash studio.py burns into every clip it encodes. */
-  const OB_SHOT = {
-    press:   { src: 'assets/crt-press.jpg?v=14',   alt: 'A glass piece pressing down on the nail bed, arrows showing the pressure' },
-    release: { src: 'assets/crt-release.jpg?v=14', alt: 'The moment of release, the frame flashing green' },
-    refill:  { src: 'assets/crt-refill.jpg?v=14',  alt: 'The nail bed a moment later, its colour returned' }
-  };
-  const shot = (k, cap) => `<figure class="ob-shot">
-      <img src="${OB_SHOT[k].src}" alt="${OB_SHOT[k].alt}" width="384" height="384"
-           loading="eager" decoding="async">
-      <figcaption>${cap}</figcaption>
-    </figure>`;
-  const obArrow = `<span class="ob-arrow" aria-hidden="true">${icon('fwd', 15)}</span>`;
+  /* The walkthrough IS the recorded demo. It plays, stopping itself at each
+     of these points (seconds) so the caption burned into that part of the
+     footage can be read; Next resumes to the following one. The last stop is
+     the end of the video, where Next becomes "Done". Pulled out as data so
+     re-cutting the video only means editing this one line. */
+  const VIDEO_STOPS = [4, 8, 14, 21, 24, 33];
+  const obSegStart = i => (i <= 0 ? 0 : VIDEO_STOPS[i - 1]);
+  const obLastStep = () => VIDEO_STOPS.length - 1;
 
   const prefersReducedMotion = () =>
     window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1108,8 +1080,8 @@ const SUPA_HEADERS = {
   function onboardVideoHtml() {
     return `<div class="ob-video-wrap">
       <video id="obDemoVideo" class="ob-video" src="assets/intro-demo.mp4"
-             muted playsinline loop
-             aria-label="Demonstration: the nail bed is pressed, the screen flashes green as pressure is released, then the colour returns — the moment to press Mark."
+             muted playsinline preload="auto"
+             aria-label="A recorded walkthrough of the app: playing a clip, the green release flash, stepping frames, marking the colour change and saving."
              onerror="this.closest('.ob-video-wrap').classList.add('missing')"></video>
       <div class="rotate-prompt" role="status">
         ${icon('retry', 30)}
@@ -1118,77 +1090,147 @@ const SUPA_HEADERS = {
     </div>`;
   }
 
-  /* Plays the demo the moment it's actually watchable (landscape, or a
-     tablet/laptop — always wide enough regardless of orientation) and pauses
-     it rather than autoplaying invisibly behind the rotate prompt. Reduced-
-     motion viewers get a paused first frame instead of autoplay. Re-run on
-     every resize/orientation change so turning the phone mid-prompt starts
-     it without needing to reopen the walkthrough. */
+  /* ---------- demo playback ----------
+     Drives the video between stops. Everything here updates ONLY the little
+     nav strip (renderObControls) — never a full render(), which would rebuild
+     the <video> and lose its position, exactly like the player's mark panel. */
+  const obVideo = () => document.getElementById('obDemoVideo');
+
+  function obPortraitPhone() {
+    return window.matchMedia('(max-width: 640px) and (orientation: portrait)').matches;
+  }
+
+  /* Polls the clock every animation frame while the demo runs, so it stops
+     within a frame or two of the wanted moment instead of up to a quarter
+     second late. Cancelled the moment it parks or the video pauses. */
+  let obRaf = null;
+  function obStopWatch() {
+    if (obRaf) { cancelAnimationFrame(obRaf); obRaf = null; }
+  }
+  function obStartWatch() {
+    obStopWatch();
+    const tick = () => {
+      obRaf = null;
+      const v = obVideo();
+      if (!v || v.paused || state.obAtStop) return;
+      const target = VIDEO_STOPS[state.onboardPage];
+      if (target != null && v.currentTime >= target) return obPark(target);
+      obRaf = requestAnimationFrame(tick);
+    };
+    obRaf = requestAnimationFrame(tick);
+  }
+
+  /* Attaches the stop-watcher once per <video> element and starts the first
+     segment when it's actually watchable (landscape, or a tablet/laptop —
+     never narrow-and-upright at once). Reduced motion waits for Next
+     instead of auto-playing. Re-run on resize so turning the phone
+     mid-prompt starts it without reopening the walkthrough. */
   function syncOnboardVideo() {
-    const v = document.getElementById('obDemoVideo');
+    const v = obVideo();
     if (!v) return;
-    const portraitPhone = window.matchMedia('(max-width: 640px) and (orientation: portrait)').matches;
-    if (portraitPhone || prefersReducedMotion()) { v.pause(); return; }
-    v.play().catch(() => {});
+    if (!v.__obWired) {
+      v.__obWired = true;
+      // Watched frame-by-frame rather than with `timeupdate`, which only
+      // fires about four times a second — a quarter-second of overshoot is
+      // enough to slide past a caption into the start of the next one.
+      v.addEventListener('play', obStartWatch);
+      v.addEventListener('pause', obStopWatch);
+      // The final stop sits on the last frame; if playback runs out first,
+      // park there anyway rather than leaving the button stuck on "Next".
+      v.addEventListener('ended', () => obPark(null));
+    }
+    if (obPortraitPhone() || prefersReducedMotion()) { v.pause(); return; }
+    if (!state.obAtStop) v.play().catch(() => {});
   }
   window.addEventListener('resize', syncOnboardVideo);
   window.addEventListener('orientationchange', syncOnboardVideo);
 
-  function onboardIllo(kind) {
-    if (kind === 'press') return onboardVideoHtml();
-    if (kind === 'mark') {
-      // Only the half that needs a response: the flash, then the moment to press.
-      return `<div class="ob-scene ob-scene-mark">
-        ${shot('release', 'Green flash')}${obArrow}${shot('refill', 'Mark here')}
-        <div class="ob-mark-side">
-          <div class="ob-mini-mark">${icon('dot', 11)} Mark<span class="ob-ripple"></span></div>
-          <div class="ob-mini-result">0.86s marked</div>
-        </div>
+  /* Seeking needs the host to answer byte-range requests. GitHub Pages does,
+     but a host that doesn't answers a seek by snapping back to 0 — which
+     would throw the viewer to the start of the demo mid-walkthrough. So
+     every seek is optional: skipped when it isn't supported, and skipped
+     when we're already close enough to matter. Going forwards never needs
+     one (a segment starts exactly where the previous stop paused), so the
+     normal Next-Next-Next path works either way. */
+  function obSeek(v, to) {
+    if (!v || to == null || !isFinite(to)) return;
+    if (Math.abs(v.currentTime - to) <= 0.25) return;
+    let seekable = false;
+    try { seekable = v.seekable && v.seekable.length > 0 && v.seekable.end(0) > 1; } catch {}
+    if (!seekable) return;
+    try { v.currentTime = to; } catch {}
+  }
+
+  // Stop and settle on a caption.
+  function obPark(atTime) {
+    const v = obVideo();
+    if (!v) return;
+    v.pause();
+    obSeek(v, atTime);
+    state.obAtStop = true;
+    renderObControls();
+  }
+  // Play the segment that ends at VIDEO_STOPS[i].
+  function obPlaySegment(i) {
+    const v = obVideo();
+    state.onboardPage = Math.max(0, Math.min(obLastStep(), i));
+    state.obAtStop = false;
+    if (!v) return renderObControls();
+    obSeek(v, obSegStart(state.onboardPage));
+    renderObControls();
+    if (!obPortraitPhone() && !prefersReducedMotion()) v.play().catch(() => {});
+  }
+
+  function obNext() {
+    // Mid-segment: jump straight to this step's caption rather than waiting.
+    if (!state.obAtStop) return obPark(VIDEO_STOPS[state.onboardPage]);
+    if (state.onboardPage >= obLastStep()) return finishOnboarding();
+    obPlaySegment(state.onboardPage + 1);
+  }
+  function obBack() {
+    if (state.onboardPage <= 0) return;
+    obPlaySegment(state.onboardPage - 1);
+  }
+
+  /* The nav strip: step counter, dots and the Back/Next buttons. Re-rendered
+     on its own so the video underneath keeps playing untouched. */
+  function obControlsHtml() {
+    const i = Math.max(0, Math.min(obLastStep(), state.onboardPage || 0));
+    const isLast = i === obLastStep();
+    const replay = state.onboardReplay;
+    // First-run ends on "Start" (into the first clip); a replay ends on
+    // "Back to clip" (returns to the clip they paused on).
+    const doneLabel = replay ? 'Back to clip' : 'Start';
+    const doneIcon = replay ? 'fwd' : 'check';
+    const dots = VIDEO_STOPS.map((_, n) =>
+      `<button class="ob-dot ${n === i ? 'active' : ''}" aria-label="Go to step ${n + 1}"
+         aria-current="${n === i ? 'true' : 'false'}" onclick="window.__act('onboardgoto',${n})"></button>`
+    ).join('');
+    return `<span class="ob-eyebrow" id="obEyebrow">Step ${i + 1} of ${VIDEO_STOPS.length}</span>
+      <div class="ob-dots">${dots}</div>
+      <div class="ob-nav">
+        <button class="btn neutral" onclick="window.__act('onboardback')" ${i === 0 ? 'disabled' : ''}>${icon('back', 16)} Back</button>
+        <button class="btn ob-primary" onclick="window.__act('onboardnext')">
+          ${state.obAtStop && isLast ? `${doneLabel} ${icon(doneIcon, 16)}` : `Next ${icon('fwd', 16)}`}
+        </button>
       </div>`;
-    }
-    // A strip of clips waiting, with the run of SET_SIZE filling up one by one.
-    const dots = Array.from({ length: SET_SIZE },
-      (_, i) => `<span style="animation-delay:${(i * 0.26).toFixed(2)}s"></span>`).join('');
-    const strip = [1, 2, 3].map(n =>
-      `<img src="assets/crt-thumb${n}.jpg?v=14" alt="" width="192" height="192" loading="lazy" decoding="async">`
-    ).join('') + `<span class="ob-strip-more" aria-hidden="true">&hellip;</span>`
-      + `<img src="assets/crt-thumb4.jpg?v=14" alt="" width="192" height="192" loading="lazy" decoding="async">`;
-    return `<div class="ob-scene ob-scene-pick">
-      <div class="ob-set-pill">${icon('dot', 10)} one set &middot; ${SET_SIZE} clips</div>
-      <div class="ob-set-dots">${dots}</div>
-      <div class="ob-strip">${strip}</div>
-    </div>`;
+  }
+  function renderObControls() {
+    const el = document.getElementById('obControls');
+    if (el) el.innerHTML = obControlsHtml();
   }
 
   function viewOnboarding() {
-    const page = Math.max(0, Math.min(ONBOARD_PAGES.length - 1, state.onboardPage || 0));
-    const p = ONBOARD_PAGES[page];
-    const isLast = page === ONBOARD_PAGES.length - 1;
     const replay = state.onboardReplay;   // opened from the player, not first-run
-    const dots = ONBOARD_PAGES.map((_, i) =>
-      `<button class="ob-dot ${i === page ? 'active' : ''}" aria-label="Go to step ${i + 1}"
-         aria-current="${i === page ? 'true' : 'false'}" onclick="window.__act('onboardgoto',${i})"></button>`
-    ).join('');
-    // First-run ends on "Start" (into the first clip); a replay ends on
-    // "Back to clip" (returns to the clip they paused on), and its skip
-    // reads "Close" rather than "Skip".
-    const lastLabel = replay ? 'Back to clip' : 'Start';
-    const lastIcon = replay ? 'fwd' : 'check';
-
     return `<div class="onboard-layout">
       <div class="card onboard-card">
         <div class="ob-top">
-          <span class="ob-eyebrow">${p.eyebrow}</span>
+          <span class="ob-kicker">How it works</span>
           <button class="ob-skip" onclick="window.__act('onboardskip')">${replay ? 'Close' : 'Skip'}</button>
         </div>
-        <div class="ob-illo-wrap">${onboardIllo(p.illo)}</div>
-        <h2 class="ob-title">${p.title}</h2>
-        <p class="ob-body">${p.body}</p>
-        <div class="ob-dots">${dots}</div>
-        <div class="ob-nav">
-          <button class="btn neutral" onclick="window.__act('onboardback')" ${page === 0 ? 'disabled' : ''}>${icon('back', 16)} Back</button>
-          <button class="btn ob-primary" onclick="window.__act('${isLast ? 'onboardfinish' : 'onboardnext'}')">${isLast ? lastLabel : 'Next'} ${icon(isLast ? lastIcon : 'fwd', 16)}</button>
-        </div>
+        <div class="ob-illo-wrap">${onboardVideoHtml()}</div>
+        <p class="ob-body">The demo pauses at each step — read it, then press <b>Next</b> to carry on.</p>
+        <div id="obControls">${obControlsHtml()}</div>
       </div>
     </div>`;
   }
@@ -1715,7 +1757,7 @@ const SUPA_HEADERS = {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
     if (e.key === 'ArrowRight') {
       e.preventDefault();
-      window.__act((state.onboardPage || 0) >= ONBOARD_PAGES.length - 1 ? 'onboardfinish' : 'onboardnext');
+      window.__act('onboardnext');   // handles both "resume" and the final "Done"
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
       window.__act('onboardback');
@@ -1760,7 +1802,7 @@ const SUPA_HEADERS = {
     // Walk through the explainer while the queue is being put together;
     // otherwise hold on a brief "preparing" card.
     if (hasOnboarded(name)) { state.view = 'loading'; }
-    else { state.view = 'onboarding'; state.onboardPage = 0; }
+    else { state.view = 'onboarding'; state.onboardPage = 0; state.obAtStop = false; }
     render();
     await prepareQueue();
     // Don't yank someone out of the walkthrough just because the queue landed.
@@ -1900,12 +1942,15 @@ const SUPA_HEADERS = {
     if (act === 'howto') {
       state.onboardReplay = true;
       state.onboardPage = 0;
+      state.obAtStop = false;
       state.view = 'onboarding';
       return render();
     }
-    if (act === 'onboardnext') { state.onboardPage = Math.min(ONBOARD_PAGES.length - 1, (state.onboardPage || 0) + 1); return render(); }
-    if (act === 'onboardback') { state.onboardPage = Math.max(0, (state.onboardPage || 0) - 1); return render(); }
-    if (act === 'onboardgoto') { state.onboardPage = Math.max(0, Math.min(ONBOARD_PAGES.length - 1, Number(id) || 0)); return render(); }
+    // These drive the demo video, so they must NOT render() — that would
+    // rebuild the <video> and throw away its position.
+    if (act === 'onboardnext') return obNext();
+    if (act === 'onboardback') return obBack();
+    if (act === 'onboardgoto') return obPlaySegment(Number(id) || 0);
     if (act === 'onboardskip' || act === 'onboardfinish') { return finishOnboarding(); }
     if (act === 'logout') {
       state.user = null; state.view = 'login'; state.marked = null;
