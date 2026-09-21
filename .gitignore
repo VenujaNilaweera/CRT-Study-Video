@@ -44,6 +44,9 @@ videos/
 *.mov
 *.m4v
 *.stamp.json
+# ...except the walkthrough demo: unlike the study clips (which live in
+# Supabase Storage) this one is a site asset GitHub Pages has to serve.
+!assets/intro-demo.mp4
 
 # IDE
 .vscode/
