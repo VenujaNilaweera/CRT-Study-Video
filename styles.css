@@ -524,7 +524,10 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   margin: 0;
   font-size: 14px;
   color: var(--ink);
-  /* Placeholder text is visibly a placeholder, not mistaken for a real name. */
+}
+/* Text that is still a [bracketed] placeholder is visibly a placeholder,
+   not mistaken for a real, confirmed detail. */
+.about-facts dd.placeholder {
   font-style: italic;
 }
 
@@ -544,6 +547,10 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   border: 1px solid var(--line);
   background: var(--surface-2);
 }
+/* A designed graphic (e.g. a team infographic with names baked in) must
+   never be cropped the way a headshot can be — show it whole. */
+.about-photo.wide { grid-column: 1 / -1; }
+.about-photo.wide img { aspect-ratio: 3 / 2; object-fit: contain; }
 .about-photo figcaption {
   margin-top: 7px; font-size: 12px; line-height: 1.45; color: var(--muted);
 }

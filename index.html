@@ -941,23 +941,14 @@ const SUPA_HEADERS = {
      ABOUT PAGE  (full screen)
 
      Everything factual here describes the study itself and is safe to state.
-     Everything IDENTIFYING — names, institution, ethics number, contact — is
-     a [bracketed] placeholder, because this app has no way to know those and
-     must never invent them.
+     The team is filled in (see the Supervisor/Co-Supervisor/External
+     Supervisor/Researchers facts below and assets/about-team.jpg). What is
+     still a [bracketed] placeholder — ethics approval number, contact email
+     — is genuinely unknown to this app and must never be invented.
 
-     TODO(Venuja): replace every remaining [bracketed] placeholder below with
-     the real details, and drop the team photo into assets/about-team.jpg. A
-     photo that hasn't been added yet shows a tidy empty frame instead of a
-     broken image, so it's safe to add later.
+     TODO(Venuja): replace the remaining [bracketed] placeholders below with
+     the real ethics approval reference and a contact email address.
      ========================================================================= */
-  function aboutPhoto(file, caption) {
-    return `<figure class="about-photo">
-      <img src="assets/${file}" alt="${esc(caption)}" loading="lazy"
-           onerror="this.closest('.about-photo').classList.add('missing')">
-      <figcaption>${esc(caption)}</figcaption>
-    </figure>`;
-  }
-
   function viewAbout() {
     return `<div class="about-page">
       <div class="about-top">
@@ -988,24 +979,27 @@ const SUPA_HEADERS = {
 
       <section class="about-sec">
         <h3>The team</h3>
-        <!-- TODO(Venuja): still placeholders — fill in once confirmed -->
         <dl class="about-facts">
-          <div><dt>Principal investigator</dt><dd>[Principal investigator name]</dd></div>
-          <div><dt>Supervisor(s)</dt><dd>[Supervisor name(s)]</dd></div>
-          <div><dt>Research team</dt><dd>T.H.V.K. Nilaweera, B.P.H. Liyanage</dd></div>
-          <div><dt>Department / Institution</dt><dd>Department of Electrical and Electronic Engineering, Faculty of Engineering, University of Jaffna</dd></div>
+          <div><dt>Supervisor</dt><dd>Prof. Tharmarajah Thiruvaran — Professor, Head, Department of Electrical and Electronic Engineering, Faculty of Engineering, University of Jaffna</dd></div>
+          <div><dt>Co-Supervisor</dt><dd>Dr. Neethan Ratnakumar — Lecturer (On Contract), Department of Mechanical Engineering, Faculty of Engineering, University of Jaffna</dd></div>
+          <div><dt>External Supervisor</dt><dd>Dr. Gayana P. S. Gunaratna — Senior Lecturer (Grade II), Head, Department of Medical Microbiology, Faculty of Medicine, University of Kelaniya</dd></div>
+          <div><dt>Researchers</dt><dd>B.P.H. Liyanage, T.H.V.K. Nilaweera — Undergraduate Researchers, Department of Electrical and Electronic Engineering, Faculty of Engineering, University of Jaffna</dd></div>
         </dl>
-        <!-- TODO(Venuja): drop the team photo in as assets/about-team.jpg -->
         <div class="about-photos">
-          ${aboutPhoto('about-team.jpg', 'The research team')}
+          <figure class="about-photo wide">
+            <img src="assets/about-team.jpg" alt="The research team: supervisors and researchers" loading="lazy"
+                 onerror="this.closest('.about-photo').classList.add('missing')">
+            <figcaption>The research team</figcaption>
+          </figure>
         </div>
       </section>
 
       <section class="about-sec">
         <h3>Ethics, privacy and your data</h3>
+        <!-- TODO(Venuja): still placeholders — fill in once confirmed -->
         <dl class="about-facts">
-          <div><dt>Ethics approval</dt><dd>[Ethics approval reference number]</dd></div>
-          <div><dt>Contact</dt><dd>[Contact email address]</dd></div>
+          <div><dt>Ethics approval</dt><dd class="placeholder">[Ethics approval reference number]</dd></div>
+          <div><dt>Contact</dt><dd class="placeholder">[Contact email address]</dd></div>
         </dl>
         <ul class="about-bullets">
           <li><b>No full names.</b> Initials are enough — they exist only to group your own responses together so repeated clips are never shown to you twice.</li>
