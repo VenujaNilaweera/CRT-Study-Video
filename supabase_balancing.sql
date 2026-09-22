@@ -90,13 +90,13 @@ update public.videos v
 -- 4. "What has this person already marked?"
 -- ---------------------------------------------------------------------------
 --  A clip must never be shown twice to the same participant. The browser
---  remembers what it has done, but that memory dies with the browser — a new
+--  remembers what it has done, but that memory dies with the browser - a new
 --  phone, a cleared cache or a private tab would all resurface old clips.
 --
 --  This returns ONLY the clip ids for one display name: no times, no frames,
 --  no roles, nothing about anybody else. That is the least this can leak and
 --  still keep the promise across devices. Participants sign in with initials
---  and no password, so treat it as exactly what it is — a de-duplication
+--  and no password, so treat it as exactly what it is - a de-duplication
 --  helper, never an access-control boundary.
 create or replace function public.crt_seen_videos(p_name text)
 returns table (video_id uuid)

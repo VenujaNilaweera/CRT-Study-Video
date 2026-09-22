@@ -1,7 +1,7 @@
 """Build the walkthrough illustrations for the intro.
 
 The three pictures are the study team's own illustrations of the capillary-
-refill test — pressurise, release (green flash), colour returns — supplied by
+refill test - pressurise, release (green flash), colour returns - supplied by
 the supervisor. Each is placed on a square tile in its own background colour
 (a dark teal, rgb 4,18,26) so the three read as one consistent set with no
 visible border, and so they sit seamlessly on the dark walkthrough card.
@@ -15,12 +15,12 @@ SRC = os.path.join(os.path.dirname(__file__), 'walkthrough_src')
 OUT = os.path.join(os.path.dirname(__file__), 'assets')
 os.makedirs(OUT, exist_ok=True)
 
-BG = (4, 18, 26)            # the illustrations' own background — seamless tile
+BG = (4, 18, 26)            # the illustrations' own background - seamless tile
 
 # Which source crop illustrates each step of the test.
 STEPS = {
     'crt-press.jpg':   'press.png',    # pressure applied (downward arrows)
-    'crt-release.jpg': 'release.png',  # released — the green flash
+    'crt-release.jpg': 'release.png',  # released - the green flash
     'crt-refill.jpg':  'refill.png',   # colour returns
 }
 

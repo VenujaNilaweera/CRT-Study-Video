@@ -1,5 +1,5 @@
 /* ============================================================
-   CRT Perception Study — theme + layout
+   CRT Perception Study - theme + layout
    Light + dark via CSS variables. Responsive: phone/tablet/desktop.
    ============================================================ */
 
@@ -226,11 +226,11 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   margin: 4px auto;
 }
 .login-card { margin: 0; }
-/* Subordinate to the study title above it — this is a form label, not a
+/* Subordinate to the study title above it - this is a form label, not a
    second headline competing with the name of the study. */
 .login-card .page-head h2 { font-size: clamp(15.5px, 2vw, 17px); }
 .login-card .page-head { margin-bottom: 10px; }
-/* Trims the login page specifically (not every card sitewide — the player
+/* Trims the login page specifically (not every card sitewide - the player
    and other views keep their normal padding/spacing) so the title, intro,
    and the Start button all fit a 1366x768 laptop screen without scrolling. */
 body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
@@ -260,7 +260,7 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   /* Capped lower than a typical hero (was 38px): this sits above a form the
      participant still has to fill in and submit, so it should read as a
      clear page title, not claim the vertical space a full splash headline
-     would — that space is what pushed the Start button below the fold. */
+     would - that space is what pushed the Start button below the fold. */
   font-size: clamp(21px, 3vw, 28px);
   line-height: 1.18;
   letter-spacing: -0.4px;
@@ -548,7 +548,7 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   background: var(--surface-2);
 }
 /* A designed graphic (e.g. a team infographic with names baked in) must
-   never be cropped the way a headshot can be — show it whole. */
+   never be cropped the way a headshot can be - show it whole. */
 .about-photo.wide { grid-column: 1 / -1; }
 .about-photo.wide img { aspect-ratio: 3 / 2; object-fit: contain; }
 .about-photo figcaption {
@@ -786,7 +786,7 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   display: block;
   width: 100%;
   /* The width/height ATTRIBUTES on the tag reserve space while the picture
-     loads, but they also land as presentational height — which beats
+     loads, but they also land as presentational height - which beats
      aspect-ratio and stretches the frame. height:auto hands the shape back. */
   height: auto;
   aspect-ratio: 1;
@@ -804,7 +804,7 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   color: var(--muted);
   text-align: center;
   /* Reserved rather than measured, so every caption occupies the same space
-     whether it wraps to one line or two — that keeps the pictures level with
+     whether it wraps to one line or two - that keeps the pictures level with
      each other, and lets the arrow below be offset by a known amount. */
   min-height: var(--ob-cap);
 }
@@ -887,7 +887,7 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   font-family: var(--mono); font-size: 11.5px; color: var(--ink-2);
 }
 .ob-set-pill .ic { color: var(--teal); }
-/* flex-wrap so this stays correct whatever SET_SIZE is — at 20 clips these
+/* flex-wrap so this stays correct whatever SET_SIZE is - at 20 clips these
    would otherwise overflow a narrow onboarding card in one unbroken row. */
 .ob-set-dots { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; max-width: 220px; margin: 0 auto; }
 .ob-set-dots span {
@@ -966,7 +966,7 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 
 
 /* ---- The walkthrough: a full-screen recording with controls on it ----
-   The recording IS the screen — no card, no dialog. .ob-stage is cut to the
+   The recording IS the screen - no card, no dialog. .ob-stage is cut to the
    video's exact 16:9 and sized to whichever of width/height runs out first,
    so the picture is as large as the device allows AND every overlay
    percentage lands on the same spot of the footage at any size. */
@@ -1052,7 +1052,7 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 .ob-btn.back:hover:not(:disabled) { background: rgba(255,255,255,.3); }
 .ob-btn.back:disabled { opacity: .3; cursor: default; }
 
-/* "Turn your phone" card — shown for two seconds at the start on a portrait
+/* "Turn your phone" card - shown for two seconds at the start on a portrait
    phone, then the demo plays regardless (rotated into landscape below). */
 .rotate-prompt { display: none; }
 .ob-full.rotate-intro .rotate-prompt {
@@ -1240,7 +1240,7 @@ video {
 }
 
 /* The player title row carries a "Menu" back button so there is always a way
-   out of a clip — on phones the header and breadcrumb are hidden here, and
+   out of a clip - on phones the header and breadcrumb are hidden here, and
    without this the only exit was the browser's Back button (which leaves the
    site entirely). It returns to the current collection's video list; from
    there the "Collections" breadcrumb reaches the full menu. */
@@ -1249,7 +1249,7 @@ video {
    it is the only signal of where they are and how much is left. */
 .run-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .run-head-right { display: inline-flex; align-items: center; gap: 10px; }
-/* Quick, always-visible "watch how it works" entry — a quiet neutral pill so
+/* Quick, always-visible "watch how it works" entry - a quiet neutral pill so
    it never competes with the primary Save & Next, but it sits up top where a
    first-timer looks the moment they're unsure. */
 .howto-top { flex: none; padding: 7px 12px; font-size: 13px; }
@@ -1386,8 +1386,8 @@ body[data-view="player"] .run-bar { flex: none; }
 
   /* The player becomes a full-height flex column that never scrolls. The VIDEO
      is the flexible element: it takes whatever height is left after the
-     controls, so the whole play → mark → next flow fits on ANY phone —
-     small or large, portrait or landscape — with no per-device tuning. */
+     controls, so the whole play → mark → next flow fits on ANY phone -
+     small or large, portrait or landscape - with no per-device tuning. */
   /* Cap the flex column at the viewport; .wrap is flex:1 inside body, so
      without this the body simply grows to fit its content. */
   body[data-view="player"] { height: 100dvh; overflow: hidden; }
@@ -1510,7 +1510,7 @@ body[data-view="player"] .run-bar { flex: none; }
   background: var(--surface-2);
 }
 
-/* Sits below Restart/Skip — a quiet, one-click "this clip is broken" report,
+/* Sits below Restart/Skip - a quiet, one-click "this clip is broken" report,
    deliberately understated so it never competes with Save & Next. */
 .flag-row .flag-btn {
   width: 100%;
@@ -1570,7 +1570,7 @@ body[data-view="player"] .run-bar { flex: none; }
   user-select: none;
   mix-blend-mode: multiply;
   /* A long collection name or clip title must truncate, never overflow
-     into the tag sharing its row — max-width is a % of the video rect
+     into the tag sharing its row - max-width is a % of the video rect
      itself (.wmark is sized to it by fitWatermark()), so the two tags on
      one row can never meet even at the narrowest video width. */
   max-width: 46%;
@@ -1729,7 +1729,7 @@ kbd {
   .speed-row { gap: 6px; }
   .speed-lbl { font-size: 10px; }
   .speed-btn { padding: 7px 4px; font-size: 12px; }
-  /* Compact result card — it appears under the controls after marking. */
+  /* Compact result card - it appears under the controls after marking. */
   .marked { padding: 10px 12px; }
   .marked .mt { font-size: 19px; }
   .marked .tip { display: none; }
@@ -1742,7 +1742,7 @@ kbd {
   .hdr button { padding: 7px 10px; font-size: 12px; }
 }
 
-/* Touch devices: no keyboard and no hover — drop keyboard hints and give every
+/* Touch devices: no keyboard and no hover - drop keyboard hints and give every
    control a comfortable tap target. */
 @media (hover: none) {
   .shortcuts { display: none; }

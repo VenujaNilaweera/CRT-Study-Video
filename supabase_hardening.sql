@@ -7,7 +7,7 @@
 --  Why this exists
 --  ---------------
 --  Participants submit annotations with the site's PUBLIC key, so that one
---  path has to stay open — it is the study. Everything else (editing videos,
+--  path has to stay open - it is the study. Everything else (editing videos,
 --  editing collections, uploading files, reading other people's marks) is
 --  already blocked by row-level security; this file closes the remaining gap
 --  by making it impossible to store a nonsensical annotation, even from a
@@ -27,7 +27,7 @@ ALTER TABLE videos ADD  CONSTRAINT videos_storage_path_key UNIQUE (storage_path)
 -- 2. Reject impossible annotation values
 -- ---------------------------------------------------------------------------
 -- A real capillary refill measurement cannot be negative, and anything past
--- a minute is not a refill time — it is noise or a deliberately bad payload.
+-- a minute is not a refill time - it is noise or a deliberately bad payload.
 ALTER TABLE annotations DROP CONSTRAINT IF EXISTS annotations_crt_sane;
 ALTER TABLE annotations ADD  CONSTRAINT annotations_crt_sane
   CHECK (crt_s IS NULL OR (crt_s >= 0 AND crt_s <= 60));

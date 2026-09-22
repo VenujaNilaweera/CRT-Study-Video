@@ -1,5 +1,5 @@
 """
-convert_videos.py  —  make every clip in videos/ playable in the browser.
+convert_videos.py  -  make every clip in videos/ playable in the browser.
 
 Why you need this
 -----------------
@@ -21,7 +21,7 @@ Workflow
 --------
   1. Drop your .mp4 clips into the  videos/  folder.
   2. Run:   python convert_videos.py
-  3. Reload the site — the clips appear automatically.
+  3. Reload the site - the clips appear automatically.
 
 Requires ffmpeg + ffprobe on PATH (https://ffmpeg.org/download.html).
 """

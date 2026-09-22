@@ -94,7 +94,7 @@ def append_annotation(payload: dict) -> int:
         submitted_at,
     ]
     sheet.append(row)
-    for col in (7, 8, 9):  # CRT / Raw mark / Release — 3-decimal seconds
+    for col in (7, 8, 9):  # CRT / Raw mark / Release - 3-decimal seconds
         sheet.cell(sheet.max_row, col).number_format = "0.000"
     WORKBOOK_PATH.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(WORKBOOK_PATH)

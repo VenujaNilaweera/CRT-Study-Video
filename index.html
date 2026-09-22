@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0E2A2F">
 <!-- GitHub Pages can't set custom HTTP headers, so without this a browser
      that already has this page cached (typically a PC that visited before
-     — a phone visiting for the first time just gets the latest by default)
+     - a phone visiting for the first time just gets the latest by default)
      can keep serving that OLD copy indefinitely: old JS, missing whatever
      shipped since. These meta tags are the only cache-busting lever a
      static host like this leaves us. -->
@@ -57,7 +57,7 @@
 
    Videos, collections, and their stamp metadata now come from Supabase
    (see the SUPABASE BACKEND block below). To add clips: upload the .mp4 to
-   the Storage bucket and insert a matching row in the `videos` table — the
+   the Storage bucket and insert a matching row in the `videos` table - the
    app picks them up on the next reload. Nothing to edit here.
 
    fps defaults to 30 (used to turn the marked time into a frame number).
@@ -118,7 +118,7 @@ const SUPA_HEADERS = {
     cardPage: 0,            // which of the 3 intro cards is showing
     onboardPage: 0,         // which of the demo video's stops the walkthrough is on
     obAtStop: false,        // true once the video has paused ON that stop's caption
-    obBroken: false,        // the demo can't play at all — fall back to a plain stepper
+    obBroken: false,        // the demo can't play at all - fall back to a plain stepper
     obImmersiveTried: false,// fullscreen / orientation-lock attempted once per walkthrough open
     onboardReplay: false,   // true when the walkthrough was re-opened from the player ("How it works")
     drawerOpen: false,   // the ☰ side menu
@@ -129,11 +129,11 @@ const SUPA_HEADERS = {
     // reload doesn't send a second report for the same clip).
     flaggedClips: new Set(loadFlaggedClips()),
     // The sign-in form's own fields, held in state (not just the DOM) so a
-    // re-render — a failed validation, or the returning-participant lookup
-    // landing — never wipes what someone already typed.
+    // re-render - a failed validation, or the returning-participant lookup
+    // landing - never wipes what someone already typed.
     formName: '', formStatus: '', formAge: '',
     returning: null,     // returning-participant lookup result, while the name field is being checked
-    // "Continue as X" popup dismissed for this login screen — reset on
+    // "Continue as X" popup dismissed for this login screen - reset on
     // every logout so it offers again next time.
     rememberedDismissed: false,
     libraryError: '',    // why the clip library is empty, if it is
@@ -152,7 +152,7 @@ const SUPA_HEADERS = {
     const m = Math.floor(t / 60), s = t % 60;
     return String(m).padStart(2, '0') + ':' + s.toFixed(2).padStart(5, '0');
   };
-  // The frame CONTAINING time t is floor(t*fps) — never round(), which would
+  // The frame CONTAINING time t is floor(t*fps) - never round(), which would
   // report the next frame once t sits past a frame's midpoint.
   const frameOf = (t, fps) => Math.floor(t * (Number(fps) || 30) + 1e-6);
 
@@ -171,7 +171,7 @@ const SUPA_HEADERS = {
       if (!state.user) { localStorage.removeItem(SESSION_KEY); return; }
       localStorage.setItem(SESSION_KEY, JSON.stringify({
         user: state.user,
-        // The queue is rebuilt from scratch on every load (it has to be — the
+        // The queue is rebuilt from scratch on every load (it has to be - the
         // set of clips this person has already marked may have grown), so only
         // who they are and their draw order are worth keeping.
         orderSeed: state.orderSeed
@@ -191,14 +191,14 @@ const SUPA_HEADERS = {
         // marked/saving/messages always start clean after a reload.
         state.marked = null; state.saving = false; state.msg = ''; state.err = '';
         // A restored session skips the login screen, so the sign-in check
-        // never runs for it — repeat the same per-name test here.
+        // never runs for it - repeat the same per-name test here.
         if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.obPhase = 'cards'; state.cardPage = 0; state.onboardPage = 0; state.obAtStop = false; state.obBroken = false; state.obImmersiveTried = false; }
       }
     } catch {}
   }
   /* ---------- remembered login (survives Log out, unlike the session above) ----------
      A shared ward device gets logged out between shifts, but it's usually the
-     same person coming back to work through their next set — so the LAST
+     same person coming back to work through their next set - so the LAST
      name/role/age used on this device is kept separately and offered back as
      a one-click "Continue as X" the next time the login screen is shown. */
   function saveLastLogin(user) {
@@ -215,7 +215,7 @@ const SUPA_HEADERS = {
      a ward, so a single "seen it" flag meant only the first of them ever got
      the explanation. Names are matched case- and space-insensitively; the old
      boolean flag parses to a non-array and is simply ignored, which shows the
-     walkthrough again once — the safer way round. */
+     walkthrough again once - the safer way round. */
   function onboardedNames() {
     try {
       const raw = JSON.parse(localStorage.getItem(ONBOARD_KEY) || '[]');
@@ -224,7 +224,7 @@ const SUPA_HEADERS = {
   }
   // A function declaration, not a const arrow: restoreSession() runs during
   // start-up BEFORE this line, and a const would still be in its temporal dead
-  // zone then — calling it threw "Cannot access 'nameKey' before initialization",
+  // zone then - calling it threw "Cannot access 'nameKey' before initialization",
   // which the restore try/catch swallowed, silently skipping the walkthrough
   // check on every refresh. A hoisted function is safe to call from anywhere.
   function nameKey(n) { return String(n || '').trim().toLowerCase(); }
@@ -254,7 +254,7 @@ const SUPA_HEADERS = {
   function newOrderSeed() {
     return Math.floor(Math.random() * 4294967296) >>> 0;
   }
-  // mulberry32: tiny deterministic PRNG — one seed always yields one order.
+  // mulberry32: tiny deterministic PRNG - one seed always yields one order.
   function seededRandom(seed) {
     let a = seed >>> 0;
     return function () {
@@ -305,7 +305,7 @@ const SUPA_HEADERS = {
     return out;
   }
 
-  /* Everything this participant has already marked — the browser's own record
+  /* Everything this participant has already marked - the browser's own record
      merged with the server's. Local alone would forget on a new phone or a
      cleared cache and start showing old clips again. */
   async function fetchSeen(name) {
@@ -325,14 +325,14 @@ const SUPA_HEADERS = {
           if (id) ids.add(id);
         }
       }
-    } catch { /* helper not installed, or offline — the local record stands */ }
+    } catch { /* helper not installed, or offline - the local record stands */ }
     return ids;
   }
 
   /* ---------- returning-participant lookup ----------
      Looks a typed name up against past submissions via the crt_lookup_participant
      RPC (see supabase_returning_users.sql). Returns null if the helper hasn't
-     been installed yet, the request fails, or nobody matches — every one of
+     been installed yet, the request fails, or nobody matches - every one of
      those cases must leave the name field behaving exactly as it does today,
      never a stuck spinner or a console error. */
   async function lookupReturning(name) {
@@ -429,7 +429,7 @@ const SUPA_HEADERS = {
   /* ---------- full-clip preload ----------
      Clips used to stream straight from Supabase Storage, so a slow
      connection could stutter mid-playback. Each clip is now fully fetched
-     into memory FIRST and played back from that local copy — see
+     into memory FIRST and played back from that local copy - see
      attachVideoEvents() for where a clip's <video src> gets filled in once
      this resolves. Held in memory only (a Blob + an object: URL); nothing
      touches disk, and nothing needs a storage permission. */
@@ -443,7 +443,7 @@ const SUPA_HEADERS = {
   function clipKey(c) { return (c && (c.videoId || c.id)) || null; }
 
   // Marks a clip as just-used and evicts the LEAST recently used one once
-  // the cache is over its limit — except whatever is on screen right now,
+  // the cache is over its limit - except whatever is on screen right now,
   // which must never be revoked out from under the <video> element.
   function touchClipCache(key) {
     const i = clipBlobOrder.indexOf(key);
@@ -462,7 +462,7 @@ const SUPA_HEADERS = {
   // Downloads one clip's .mp4 in full, reporting progress (0-99; the last
   // 1% covers turning the bytes into a Blob) when the response carries a
   // Content-Length. Degrades to an indeterminate download (no onProgress
-  // calls) when the server doesn't send one — still resolves once done.
+  // calls) when the server doesn't send one - still resolves once done.
   function fetchClipBlob(url, onProgress) {
     return fetch(url).then(res => {
       if (!res.ok) throw new Error(`clip fetch failed (${res.status})`);
@@ -482,7 +482,7 @@ const SUPA_HEADERS = {
     }).then(blob => URL.createObjectURL(blob));
   }
 
-  // Ensures `clip` has a cached, fully-downloaded blob: URL — reusing a
+  // Ensures `clip` has a cached, fully-downloaded blob: URL - reusing a
   // cached one or an in-flight fetch already under way for it. NEVER
   // rejects: resolves to null on any failure, so callers fall back to the
   // clip's plain direct Storage URL and playback still works, just
@@ -504,7 +504,7 @@ const SUPA_HEADERS = {
 
   // Quietly warms the cache for the next couple of clips in the queue, so
   // they're often already local by the time the participant reaches them.
-  // Fire-and-forget and best-effort — never awaited, never delays the
+  // Fire-and-forget and best-effort - never awaited, never delays the
   // CURRENT clip's own load.
   function prefetchAhead() {
     for (let i = state.qIndex + 1; i < Math.min(state.qIndex + 3, state.queue.length); i++) {
@@ -544,7 +544,7 @@ const SUPA_HEADERS = {
   // How far through the current run of SET_SIZE they are.
   const setDone = () => state.qIndex % SET_SIZE;
   const setNumber = () => Math.floor(state.qIndex / SET_SIZE) + 1;
-  // Clips left in this run — a final short set is normal near the end.
+  // Clips left in this run - a final short set is normal near the end.
   const setTotal = () => Math.min(SET_SIZE, state.queue.length - (setNumber() - 1) * SET_SIZE);
 
   /* ---------- icons ----------
@@ -593,7 +593,7 @@ const SUPA_HEADERS = {
   function finishOnboarding() {
     obExitImmersive();   // drop fullscreen / orientation lock on the way out
     // Re-opened from the player ("How it works")? Just go back to the clip
-    // they were on — don't touch the first-run gate or the queue.
+    // they were on - don't touch the first-run gate or the queue.
     if (state.onboardReplay) {
       state.onboardReplay = false;
       state.onboardPage = 0;
@@ -602,7 +602,7 @@ const SUPA_HEADERS = {
     }
     markOnboarded(state.user && state.user.name);
     state.onboardPage = 0;
-    // Straight into the first clip — there is nothing to choose.
+    // Straight into the first clip - there is nothing to choose.
     state.view = state.queueReady ? nextView() : 'loading';
     return render();
   }
@@ -651,7 +651,7 @@ const SUPA_HEADERS = {
     if (state.user) {
       actions += `<span class="who">${esc(state.user.name)} · ${esc(state.user.status)}</span>`;
       const pending = annotations.filter(a => a.synced === false).length;
-      if (pending) actions += `<button class="sync-warn" title="${pending} mark(s) not yet saved — click to retry" onclick="window.__act('retrysync')">${icon('retry', 15)} ${pending} unsaved</button>`;
+      if (pending) actions += `<button class="sync-warn" title="${pending} mark(s) not yet saved - click to retry" onclick="window.__act('retrysync')">${icon('retry', 15)} ${pending} unsaved</button>`;
       actions += `<button onclick="window.__act('logout')">${icon('logout', 15)} Log out</button>`;
     }
     hdrActions.innerHTML = actions;
@@ -670,7 +670,7 @@ const SUPA_HEADERS = {
     renderDrawer();
 
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
-    // The walkthrough's <video> is a fresh element on every full render —
+    // The walkthrough's <video> is a fresh element on every full render -
     // wire up its stop-watcher and start it playing if the screen allows.
     if (state.view === 'onboarding' && state.obPhase === 'video') {
       syncOnboardVideo();
@@ -692,7 +692,7 @@ const SUPA_HEADERS = {
 
   /* ---------- browser / phone Back button ----------
      This is a single page with no URL routes, so the device Back button would
-     otherwise leave the site entirely from any screen — on a phone, where the
+     otherwise leave the site entirely from any screen - on a phone, where the
      header and breadcrumb are hidden in the player, that felt like the app
      just quit. Keep one extra history entry parked ahead of the app; when Back
      consumes it, step UP one level (player → video list → collections) and
@@ -705,8 +705,8 @@ const SUPA_HEADERS = {
     try { history.pushState({ crtTrap: 1 }, ''); backTrapPrimed = true; } catch {}
   }
   window.addEventListener('popstate', () => {
-    if (!backTrapPrimed) return;               // trap not armed yet — let it be
-    // The drawer and the About page are the first things Back should undo —
+    if (!backTrapPrimed) return;               // trap not armed yet - let it be
+    // The drawer and the About page are the first things Back should undo -
     // on a phone, Back is how people expect to close a menu or leave a
     // sub-page, not how they expect to leave the site.
     if (state.drawerOpen) {
@@ -720,7 +720,7 @@ const SUPA_HEADERS = {
       return;
     }
     if (state.view === 'player') {
-      // There is no list to climb back to any more, so Back pauses the run —
+      // There is no list to climb back to any more, so Back pauses the run -
       // which is also the one place that offers a deliberate way out.
       state.marked = null; state.msg = ''; state.err = '';
       state.view = 'paused';
@@ -772,13 +772,13 @@ const SUPA_HEADERS = {
   }
 
   /* Inline "welcome back" confirm shown under the name field once a lookup
-     resolves. Never auto-submits — it fills the fields and lets the
+     resolves. Never auto-submits - it fills the fields and lets the
      participant press Continue or Start themselves. */
   function viewReturningConfirm() {
     const r = state.returning;
     if (!r || !r.exists) return '';   // nothing to show, or a name nobody has used before
     return `<div class="name-confirm">
-      <p>Welcome back, <b>${esc(r.canonicalName)}</b> — continue where you left off?</p>
+      <p>Welcome back, <b>${esc(r.canonicalName)}</b> - continue where you left off?</p>
       <div class="name-confirm-actions">
         <button class="btn nextvid small" onclick="window.__act('namecontinue')">Continue ${icon('fwd', 14)}</button>
         <button class="link-btn" onclick="window.__act('namedifferent')">I'm a different person with the same name</button>
@@ -787,12 +787,12 @@ const SUPA_HEADERS = {
   }
 
   /* A shared ward device gets logged out between shifts, but it's usually
-     the same person typing their own name back in for the next set — so as
+     the same person typing their own name back in for the next set - so as
      soon as what they've typed could be the start of the last name used on
      THIS device (device-local, no server round trip), offer to fill in the
      rest and sign back in. Nothing shows before typing starts, and nothing
      shows once the server-verified returning-participant confirm below has
-     resolved for this exact name — no point asking the same question twice. */
+     resolved for this exact name - no point asking the same question twice. */
   function matchingRememberedLogin(typed) {
     if (state.rememberedDismissed) return null;
     const t = (typed || '').trim().toLowerCase();
@@ -807,7 +807,7 @@ const SUPA_HEADERS = {
     const last = matchingRememberedLogin(state.formName);
     if (!last) return '';
     return `<div class="name-confirm">
-      <p>Continue as <b>${esc(last.name)}</b> — ${esc(last.status)}${last.age ? ` · ${esc(last.age)}` : ''}?</p>
+      <p>Continue as <b>${esc(last.name)}</b> - ${esc(last.status)}${last.age ? ` · ${esc(last.age)}` : ''}?</p>
       <div class="name-confirm-actions">
         <button class="btn nextvid small" onclick="window.__act('lastlogincontinue')">Continue ${icon('fwd', 14)}</button>
         <button class="link-btn" onclick="window.__act('lastlogindifferent')">Not you? Keep typing</button>
@@ -836,7 +836,7 @@ const SUPA_HEADERS = {
         <h2 class="hero-title">Capillary Refill Time (CRT) Visual Assessment Study</h2>
         <p class="hero-lede">This study investigates how people judge capillary refill by eye. You will
         watch short clips of a nail bed being pressed and released, and mark the moment you see the
-        colour return — your marks measure how much that judgement varies from one observer to the next.</p>
+        colour return - your marks measure how much that judgement varies from one observer to the next.</p>
       </header>
 
       <div class="card login-card">
@@ -850,7 +850,7 @@ const SUPA_HEADERS = {
                  value="${esc(state.formName)}"
                  oninput="window.__formInput('formName', this.value)"
                  onblur="window.__act('namecheck')">
-          <span class="field-hint">Part of your name or initials is enough — it only groups your responses.</span>
+          <span class="field-hint">Part of your name or initials is enough - it only groups your responses.</span>
           <div id="rememberedConfirm">${rememberedConfirmHtml()}</div>
           ${viewReturningConfirm()}
         </div>
@@ -884,12 +884,12 @@ const SUPA_HEADERS = {
           <span class="about-eyebrow">At a glance</span>
           <ul class="about-steps">
             <li><span class="n">1</span><div><b>${SET_SIZE} clips</b> per set, a few seconds each</div></li>
-            <li><span class="n">2</span><div><b>About 5 minutes</b> — stop after any set</div></li>
+            <li><span class="n">2</span><div><b>About 5 minutes</b> - stop after any set</div></li>
             <li><span class="n">3</span><div><b>One button</b> to press, nothing to choose</div></li>
           </ul>
 
           <div class="about-note">
-            <b>No full names.</b> Initials are enough — they only group your own responses. No patient data is collected.
+            <b>No full names.</b> Initials are enough - they only group your own responses. No patient data is collected.
           </div>
 
           <p class="about-foot">Saves automatically · Works on a phone</p>
@@ -903,7 +903,7 @@ const SUPA_HEADERS = {
      SIDE DRAWER
      The ☰ button in the header opens this. Rendered into its own root
      outside #app so it survives every view change and overlays the header
-     too — the drawer is site navigation, not part of any one screen.
+     too - the drawer is site navigation, not part of any one screen.
      ========================================================================= */
   function renderDrawer() {
     const root = document.getElementById('drawerRoot');
@@ -943,8 +943,8 @@ const SUPA_HEADERS = {
      Everything factual here describes the study itself and is safe to state.
      The team is filled in (see the Supervisor/Co-Supervisor/External
      Supervisor/Researchers facts below and assets/about-team.jpg). What is
-     still a [bracketed] placeholder — ethics approval number, contact email
-     — is genuinely unknown to this app and must never be invented.
+     still a [bracketed] placeholder - ethics approval number, contact email
+     - is genuinely unknown to this app and must never be invented.
 
      TODO(Venuja): replace the remaining [bracketed] placeholders below with
      the real ethics approval reference and a contact email address.
@@ -958,19 +958,19 @@ const SUPA_HEADERS = {
       <header class="about-hero">
         <span class="hero-eyebrow">About this research</span>
         <h2 class="about-h1">Capillary Refill Time (CRT) Visual Assessment Study</h2>
-        <p class="about-lede">Capillary refill time is one of the fastest bedside checks in medicine — press a nail bed, let go, and count how long the colour takes to come back. It is also one of the most subjective. This study measures precisely how much that judgement varies from one observer to the next.</p>
+        <p class="about-lede">Capillary refill time is one of the fastest bedside checks in medicine - press a nail bed, let go, and count how long the colour takes to come back. It is also one of the most subjective. This study measures precisely how much that judgement varies from one observer to the next.</p>
       </header>
 
       <section class="about-sec">
         <h3>What we are studying</h3>
-        <p>Two clinicians can watch the very same refill and read two different times. That disagreement matters, because capillary refill feeds into decisions about circulation and shock — and yet "how long is too long" rests on an eye, a stopwatch, and a judgement call made in a second or two.</p>
+        <p>Two clinicians can watch the very same refill and read two different times. That disagreement matters, because capillary refill feeds into decisions about circulation and shock - and yet "how long is too long" rests on an eye, a stopwatch, and a judgement call made in a second or two.</p>
         <p>We are measuring that variation directly. Every clip in this study is a real recording with a frame-accurate record of the exact moment pressure was released. When you mark the moment colour returns, your mark can be compared both to other observers' marks and to that ground truth, frame by frame.</p>
       </section>
 
       <section class="about-sec">
         <h3>How the study works</h3>
         <ol class="about-steps-list">
-          <li><b>You watch a short clip.</b> A nail bed is pressed, then released. The screen flashes green for a moment at the exact instant of release — that is when timing starts.</li>
+          <li><b>You watch a short clip.</b> A nail bed is pressed, then released. The screen flashes green for a moment at the exact instant of release - that is when timing starts.</li>
           <li><b>You mark the moment colour returns.</b> One button. There is nothing to time yourself and nothing to calculate.</li>
           <li><b>Clips come to you in sets of ${SET_SIZE}.</b> Nothing to choose, nothing repeated, and you can stop after any set.</li>
         </ol>
@@ -980,10 +980,10 @@ const SUPA_HEADERS = {
       <section class="about-sec">
         <h3>The team</h3>
         <dl class="about-facts">
-          <div><dt>Supervisor</dt><dd>Prof. Tharmarajah Thiruvaran — Professor, Head, Department of Electrical and Electronic Engineering, Faculty of Engineering, University of Jaffna</dd></div>
-          <div><dt>Co-Supervisor</dt><dd>Dr. Neethan Ratnakumar — Lecturer (On Contract), Department of Mechanical Engineering, Faculty of Engineering, University of Jaffna</dd></div>
-          <div><dt>External Supervisor</dt><dd>Dr. Gayana P. S. Gunaratna — Senior Lecturer (Grade II), Head, Department of Medical Microbiology, Faculty of Medicine, University of Kelaniya</dd></div>
-          <div><dt>Researchers</dt><dd>B.P.H. Liyanage, T.H.V.K. Nilaweera — Undergraduate Researchers, Department of Electrical and Electronic Engineering, Faculty of Engineering, University of Jaffna</dd></div>
+          <div><dt>Supervisor</dt><dd>Prof. Tharmarajah Thiruvaran - Professor, Head, Department of Electrical and Electronic Engineering, Faculty of Engineering, University of Jaffna</dd></div>
+          <div><dt>Co-Supervisor</dt><dd>Dr. Neethan Ratnakumar - Lecturer (On Contract), Department of Mechanical Engineering, Faculty of Engineering, University of Jaffna</dd></div>
+          <div><dt>External Supervisor</dt><dd>Dr. Gayana P. S. Gunaratna - Senior Lecturer (Grade II), Head, Department of Medical Microbiology, Faculty of Medicine, University of Kelaniya</dd></div>
+          <div><dt>Researchers</dt><dd>B.P.H. Liyanage, T.H.V.K. Nilaweera - Undergraduate Researchers, Department of Electrical and Electronic Engineering, Faculty of Engineering, University of Jaffna</dd></div>
         </dl>
         <div class="about-photos">
           <figure class="about-photo wide">
@@ -996,13 +996,13 @@ const SUPA_HEADERS = {
 
       <section class="about-sec">
         <h3>Ethics, privacy and your data</h3>
-        <!-- TODO(Venuja): still placeholders — fill in once confirmed -->
+        <p>This study is conducted internally under the academic supervision of the Supervisor, Co-Supervisor and External Supervisor named above, at the University of Jaffna and the University of Kelaniya. It follows standard ethical practice for non-clinical, non-identifying observational research: participation is voluntary and anonymous, and no patient data is collected or stored.</p>
+        <!-- TODO(Venuja): still a placeholder - fill in once confirmed -->
         <dl class="about-facts">
-          <div><dt>Ethics approval</dt><dd class="placeholder">[Ethics approval reference number]</dd></div>
           <div><dt>Contact</dt><dd class="placeholder">[Contact email address]</dd></div>
         </dl>
         <ul class="about-bullets">
-          <li><b>No full names.</b> Initials are enough — they exist only to group your own responses together so repeated clips are never shown to you twice.</li>
+          <li><b>No full names.</b> Initials are enough - they exist only to group your own responses together so repeated clips are never shown to you twice.</li>
           <li><b>No patient data.</b> The recordings show a nail bed and nothing that identifies anybody.</li>
           <li><b>What is stored.</b> Your initials, professional role, age band, and the timing of each mark you make.</li>
           <li><b>Taking part is voluntary.</b> You can stop after any set, and you are never obliged to finish.</li>
@@ -1011,7 +1011,7 @@ const SUPA_HEADERS = {
 
       <section class="about-sec" id="feedback">
         <h3>Send us feedback</h3>
-        <p>Found something confusing, something broken, or have a thought about the study? Tell us — it comes straight to the research team.</p>
+        <p>Found something confusing, something broken, or have a thought about the study? Tell us - it comes straight to the research team.</p>
         ${viewFeedbackForm()}
       </section>
 
@@ -1027,10 +1027,10 @@ const SUPA_HEADERS = {
     if (state.fbSent) {
       return `<div class="fb-done">
         <div class="run-tick">${icon('check', 22)}</div>
-        <p><b>Thank you — your feedback has been sent.</b></p>
+        <p><b>Thank you - your feedback has been sent.</b></p>
         <p class="muted">${state.fbGaveEmail
           ? 'We have your email address and will get back to you.'
-          : 'You did not leave an email address, so there is nothing to reply to — which is completely fine.'}</p>
+          : 'You did not leave an email address, so there is nothing to reply to - which is completely fine.'}</p>
         <button class="btn neutral" onclick="window.__act('fbagain')">Send another</button>
       </div>`;
     }
@@ -1042,12 +1042,12 @@ const SUPA_HEADERS = {
                   oninput="window.__formInput('fbText', this.value)">${esc(state.fbText)}</textarea>
       </div>
       <div class="field">
-        <label for="fb-email">Your email <span class="opt">— optional</span></label>
+        <label for="fb-email">Your email <span class="opt">- optional</span></label>
         <input id="fb-email" type="email" maxlength="120" autocomplete="email"
                placeholder="only if you would like a reply"
                value="${esc(state.fbEmail)}"
                oninput="window.__formInput('fbEmail', this.value)">
-        <span class="field-hint">Leave this blank if you don't want a response — your feedback still reaches us.</span>
+        <span class="field-hint">Leave this blank if you don't want a response - your feedback still reaches us.</span>
       </div>
       <button class="btn block" type="submit" ${state.fbSending ? 'disabled' : ''}>
         ${state.fbSending ? 'Sending…' : 'Send feedback'}
@@ -1072,7 +1072,7 @@ const SUPA_HEADERS = {
     {
       eyebrow: 'Step 1 of 3 · Watch',
       title: 'What you’re watching',
-      body: 'Pressure is held on the nail bed, then released. The screen flashes <b>green</b> for a moment at the release — that is when timing starts.',
+      body: 'Pressure is held on the nail bed, then released. The screen flashes <b>green</b> for a moment at the release - that is when timing starts.',
       illo: 'press'
     },
     {
@@ -1084,7 +1084,7 @@ const SUPA_HEADERS = {
     {
       eyebrow: 'Step 3 of 3 · Begin',
       title: 'Your clips come to you',
-      body: `Clips arrive one after another in sets of <b>${SET_SIZE}</b> — nothing to choose, nothing repeated, everything saved as you go. If a clip won't play, just press <b>Skip clip</b> to move on to the next one.`,
+      body: `Clips arrive one after another in sets of <b>${SET_SIZE}</b> - nothing to choose, nothing repeated, everything saved as you go. If a clip won't play, just press <b>Skip clip</b> to move on to the next one.`,
       illo: 'pick'
     }
   ];
@@ -1108,7 +1108,7 @@ const SUPA_HEADERS = {
     if (kind === 'press') {
       return `<div class="ob-scene ob-scene-press">
         ${shot('press', 'Pressure held')}${obArrow}
-        ${shot('release', 'Released — green flash')}${obArrow}
+        ${shot('release', 'Released - green flash')}${obArrow}
         ${shot('refill', 'Colour returns')}
       </div>`;
     }
@@ -1168,7 +1168,7 @@ const SUPA_HEADERS = {
      re-cutting the video only means editing this one line. */
   const VIDEO_STOPS = [4, 8, 14, 21, 24, 33];
 
-  /* Where Back/Next sit ON the picture at each stop — INSIDE that stop's
+  /* Where Back/Next sit ON the picture at each stop - INSIDE that stop's
      green caption box, tucked into the clear strip under its last line of
      text. Measured off the real frames (the green rectangle's bounds and
      where its text ends), then inset a little from the box's bottom-right
@@ -1202,7 +1202,7 @@ const SUPA_HEADERS = {
      a synthetic animation, so a first-timer watches the actual thing happen.
      A narrow phone held upright can't show landscape footage at any useful
      size, so on that one screen shape we show a "rotate your device" prompt
-     instead (CSS-only, see .rotate-prompt) — everything else (tablets,
+     instead (CSS-only, see .rotate-prompt) - everything else (tablets,
      laptops, a phone already turned sideways) just plays the video. */
   function onboardVideoHtml() {
     return `<video id="obDemoVideo" class="ob-video" src="assets/intro-demo.mp4"
@@ -1214,7 +1214,7 @@ const SUPA_HEADERS = {
 
   /* ---------- demo playback ----------
      Drives the video between stops. Everything here updates ONLY the little
-     nav strip (renderObControls) — never a full render(), which would rebuild
+     nav strip (renderObControls) - never a full render(), which would rebuild
      the <video> and lose its position, exactly like the player's mark panel. */
   const obVideo = () => document.getElementById('obDemoVideo');
 
@@ -1223,14 +1223,14 @@ const SUPA_HEADERS = {
 
   /* On a phone the demo takes over the screen: go fullscreen (which is the
      only way to drop the browser's own address bar), and ask the OS to lock
-     to landscape. Both are best-effort — fullscreen needs a user gesture (the
+     to landscape. Both are best-effort - fullscreen needs a user gesture (the
      "How it works" tap provides one) and orientation lock only exists on some
      browsers (Android yes, iOS no). Where the lock isn't available the CSS
      below rotates the picture into landscape instead, so it is landscape
      either way. Never touched on tablets or laptops. */
   function obEnterImmersive() {
     if (!obPhone()) return;
-    // Fullscreen the PAGE ROOT, not .ob-full — the browser's :fullscreen UA
+    // Fullscreen the PAGE ROOT, not .ob-full - the browser's :fullscreen UA
     // styles force the fullscreen element to fill the screen with transform
     // reset, which would undo the rotate-to-landscape below. The root filling
     // the screen still drops the address bar just the same.
@@ -1253,8 +1253,8 @@ const SUPA_HEADERS = {
 
   /* A phone held upright can't show landscape footage, so for the first two
      seconds it shows a "turn your phone sideways" card instead of waiting
-     indefinitely for the sensor. After that the demo plays regardless —
-     rotated into landscape by CSS if the phone is still upright — so it is
+     indefinitely for the sensor. After that the demo plays regardless -
+     rotated into landscape by CSS if the phone is still upright - so it is
      never blocked on the person actually turning the device. Shown at most
      once per open (guarded on the freshly-rendered .ob-full element). */
   let obRotateTimer = null;
@@ -1292,7 +1292,7 @@ const SUPA_HEADERS = {
   }
 
   /* Attaches the stop-watcher once per <video> element and starts the first
-     segment when it's actually watchable (landscape, or a tablet/laptop —
+     segment when it's actually watchable (landscape, or a tablet/laptop -
      never narrow-and-upright at once). Reduced motion waits for Next
      instead of auto-playing. Re-run on resize so turning the phone
      mid-prompt starts it without reopening the walkthrough. */
@@ -1302,7 +1302,7 @@ const SUPA_HEADERS = {
     if (!v.__obWired) {
       v.__obWired = true;
       // Watched frame-by-frame rather than with `timeupdate`, which only
-      // fires about four times a second — a quarter-second of overshoot is
+      // fires about four times a second - a quarter-second of overshoot is
       // enough to slide past a caption into the start of the next one.
       v.addEventListener('play', obStartWatch);
       v.addEventListener('pause', obStopWatch);
@@ -1310,14 +1310,14 @@ const SUPA_HEADERS = {
       // park there anyway rather than leaving the button stuck on "Next".
       v.addEventListener('ended', () => obPark(null));
       /* Nothing starts until the browser says it has buffered enough to run
-         to the end without pausing (readyState 4 / canplaythrough) — the
+         to the end without pausing (readyState 4 / canplaythrough) - the
          demo stalling halfway through a caption is worse than waiting a
          moment for it. The timer is a backstop: on a connection too slow to
          ever promise that, start anyway rather than hang on a spinner. */
       const ready = () => {
         clearTimeout(v.__obWait);
         document.querySelector('.ob-stage')?.classList.remove('loading');
-        // Buffering gave up and there is still nothing playable — fall back
+        // Buffering gave up and there is still nothing playable - fall back
         // to the stepper so nobody is stranded on a spinner.
         if (v.readyState < 3) return obFail();
         obMaybePlay();
@@ -1358,7 +1358,7 @@ const SUPA_HEADERS = {
   window.addEventListener('orientationchange', syncOnboardVideo);
 
   /* Seeking needs the host to answer byte-range requests. GitHub Pages does,
-     but a host that doesn't answers a seek by snapping back to 0 — which
+     but a host that doesn't answers a seek by snapping back to 0 - which
      would throw the viewer to the start of the demo mid-walkthrough. So
      every seek is optional: skipped when it isn't supported, and skipped
      when we're already close enough to matter. Going forwards never needs
@@ -1386,7 +1386,7 @@ const SUPA_HEADERS = {
   function obPlaySegment(i) {
     const v = obVideo();
     state.onboardPage = Math.max(0, Math.min(obLastStep(), i));
-    // With no playable video there is nothing to wait for, so stay parked —
+    // With no playable video there is nothing to wait for, so stay parked -
     // Next keeps working as a plain step-through.
     state.obAtStop = !!state.obBroken;
     if (!v) return renderObControls();
@@ -1407,7 +1407,7 @@ const SUPA_HEADERS = {
     if (!state.obAtStop) return;
     if (state.onboardPage <= 0) {
       // On a "How it works" replay there are no cards to go back to, so the
-      // first stop is the start — nothing to do. On first run, Back from the
+      // first stop is the start - nothing to do. On first run, Back from the
       // very first video stop returns to the last card.
       if (state.onboardReplay) return;
       obExitImmersive();
@@ -1429,7 +1429,7 @@ const SUPA_HEADERS = {
     // "Back to clip" (returns to the clip they paused on).
     const doneLabel = replay ? 'Back to clip' : 'Start';
     const doneIcon = replay ? 'fwd' : 'check';
-    // While the demo is running there are no buttons at all — they appear
+    // While the demo is running there are no buttons at all - they appear
     // only once it has stopped on a caption. That also means a press can't
     // be repeated: the button is gone the instant it's used, and disables
     // itself on the way out so a double-tap can't fire twice.
@@ -1490,7 +1490,7 @@ const SUPA_HEADERS = {
     return `<div class="card centred-card run-done">
       <div class="run-tick">${icon('check', 26)}</div>
       <h2>Set ${setNumber() - 1} complete</h2>
-      <p class="muted">That's <b>${doneTotal}</b> clip${doneTotal === 1 ? '' : 's'} marked. Thank you — your marks are saved.</p>
+      <p class="muted">That's <b>${doneTotal}</b> clip${doneTotal === 1 ? '' : 's'} marked. Thank you - your marks are saved.</p>
       <p class="muted small-note">${left} clip${left === 1 ? '' : 's'} still waiting, whenever you have time.</p>
       <button class="btn nextvid block" onclick="window.__act('nextset')">Continue with the next ${Math.min(SET_SIZE, left)} ${icon('fwd', 16)}</button>
       <button class="btn neutral block" onclick="window.__act('logout')">Finish for now</button>
@@ -1499,12 +1499,12 @@ const SUPA_HEADERS = {
 
   /* An empty library is NOT a finished run. Both used to land on "All done",
      which told a participant they had marked every clip when in fact nothing
-     had loaded — and gave them no way to try again. */
+     had loaded - and gave them no way to try again. */
   function viewLibraryUnavailable() {
     return `<div class="card centred-card run-done">
       <h2>The clips aren’t loading</h2>
       <p class="muted">${esc(state.libraryError || 'No clips are available right now.')}</p>
-      <p class="muted small-note">Nothing you have already marked is lost — it is saved and will be sent as soon as the connection is back.</p>
+      <p class="muted small-note">Nothing you have already marked is lost - it is saved and will be sent as soon as the connection is back.</p>
       <button class="btn nextvid block" onclick="window.__act('retrylibrary')">${icon('retry', 16)} Try again</button>
       <button class="btn neutral block" onclick="window.__act('logout')">Sign out</button>
     </div>`;
@@ -1513,7 +1513,7 @@ const SUPA_HEADERS = {
   function viewFinished() {
     return `<div class="card centred-card run-done">
       <div class="run-tick">${icon('check', 26)}</div>
-      <h2>All done — thank you</h2>
+      <h2>All done - thank you</h2>
       <p class="muted">You've marked every clip available to you. Nothing is repeated, so there's nothing further to watch right now.</p>
       <button class="btn neutral block" onclick="window.__act('logout')">Sign out</button>
     </div>`;
@@ -1534,11 +1534,11 @@ const SUPA_HEADERS = {
      or a screen recording, but a leaked capture carries the account it came
      from. Sits INSIDE the picture, styled like a burned-in camera caption, so
      a crop of just the video still carries it. Kept to the corners at low
-     opacity on purpose — this is a colour perception study, so the nail bed in
+     opacity on purpose - this is a colour perception study, so the nail bed in
      the middle of the frame must stay completely unobstructed.
 
      Two different tags in two different corner-pairs: WHO is watching
-     (top-left/bottom-right) and WHICH clip this is (top-right/bottom-left —
+     (top-left/bottom-right) and WHICH clip this is (top-right/bottom-left -
      collection + title, the same names studio.py organizes uploads by). A
      participant's Flag/Skip report already emails the clip's id; this puts
      the same identity ON the picture itself, so a screenshot of a broken
@@ -1558,7 +1558,7 @@ const SUPA_HEADERS = {
     </div>`;
   }
 
-  /* The video is object-fit:contain, so the picture rarely fills its box —
+  /* The video is object-fit:contain, so the picture rarely fills its box -
      there are empty margins either side. Left alone the watermark would float
      in that empty area instead of on the footage (and would be cropped off
      entirely in a screenshot of just the video). This measures the rendered
@@ -1587,14 +1587,14 @@ const SUPA_HEADERS = {
     const isLastOfSet = doneHere + 1 >= total;
     const pct = Math.round((doneHere / total) * 100);
     // Already fully downloaded (a prefetch got here first)? Play straight
-    // from that local copy. Otherwise leave src OUT of the tag entirely —
-    // not src="" — an empty src attribute makes some browsers try to load
+    // from that local copy. Otherwise leave src OUT of the tag entirely -
+    // not src="" - an empty src attribute makes some browsers try to load
     // the page itself as a video. attachVideoEvents() fills the real src in
     // once the download resolves (or falls back to v.url on failure).
     const cachedSrc = clipBlobCache.get(clipKey(v));
 
     /* The counter is the whole progress story now: no collections, no clip
-       list — just "how far through this run am I". */
+       list - just "how far through this run am I". */
     return `<div class="page-head run-head">
         <div class="player-title">
           <button class="btn neutral player-back" title="Pause and see your progress"
@@ -1687,7 +1687,7 @@ const SUPA_HEADERS = {
     if (el) el.innerHTML = markPanelHtml();
   }
 
-  /* "Flag a problem with this clip" — rendered and updated the same safe
+  /* "Flag a problem with this clip" - rendered and updated the same safe
      way as markPanel (touches only its own <div>, never the <video>). */
   function flagPanelHtml() {
     const v = currentClip();
@@ -1696,7 +1696,7 @@ const SUPA_HEADERS = {
     const flagged = state.flaggedClips.has(key);
     return `<button class="btn ghost small flag-btn" ${flagged ? 'disabled' : ''}
               onclick="window.__act('flagclip')">
-      ${icon('flag', 14)} ${flagged ? 'Problem reported — thank you' : "Flag a problem with this clip"}
+      ${icon('flag', 14)} ${flagged ? 'Problem reported - thank you' : "Flag a problem with this clip"}
     </button>`;
   }
   function renderFlagPanel() {
@@ -1762,7 +1762,7 @@ const SUPA_HEADERS = {
     if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
   }
 
-  /* Scrub bar — seeks while paused so stepping stays frame-accurate. */
+  /* Scrub bar - seeks while paused so stepping stays frame-accurate. */
   window.__scrub = function(val) {
     const { vid } = playerCtx();
     if (!vid || !isFinite(vid.duration)) return;
@@ -1823,7 +1823,7 @@ const SUPA_HEADERS = {
     vid.addEventListener('loadedmetadata', onMeta);
 
     // Robust "ready" handling. The controls unlock as soon as the clip can be
-    // played/seeked, and — crucially — STAY unlocked. A 'waiting' during a
+    // played/seeked, and - crucially - STAY unlocked. A 'waiting' during a
     // frame-step seek used to disable everything with no event to re-enable it
     // (while paused, 'playing' never fires), leaving the buffering overlay and
     // buttons stuck. Now 'waiting' only shows the overlay on the FIRST load.
@@ -1846,7 +1846,7 @@ const SUPA_HEADERS = {
       if (overlay) overlay.innerHTML = 'Could not load this clip. Reload the page, or check the file.';
     });
     // Safety net: never leave the overlay stuck if the browser is stingy with
-    // 'canplaythrough' — once metadata is in, unlock after a short grace period.
+    // 'canplaythrough' - once metadata is in, unlock after a short grace period.
     setTimeout(() => { if (!everReady && vid.readyState >= 1) markReady(); }, 4000);
     if (vid.readyState >= 2) markReady();
 
@@ -1862,11 +1862,11 @@ const SUPA_HEADERS = {
     // ---- full-clip preload ----
     // viewPlayer() leaves src OUT of the tag entirely when this clip hasn't
     // been fully downloaded yet (see clipBlobCache there). Fill it in once
-    // the download resolves — or, on any failure, fall back to the clip's
+    // the download resolves - or, on any failure, fall back to the clip's
     // ordinary direct Storage URL, so a broken or slow preload never leaves
     // playback stuck. The clipKey() check guards against a stale resolution
     // landing after the participant has already moved to a different clip
-    // (Skip clip included) — nothing here blocks or waits on that.
+    // (Skip clip included) - nothing here blocks or waits on that.
     if (v0 && !vid.hasAttribute('src')) {
       const key = clipKey(v0);
       const textEl = document.getElementById('vidLoadingText');
@@ -1885,13 +1885,13 @@ const SUPA_HEADERS = {
 
     vid.load();
 
-    // Fallback frame-rate detection from rendered frames — ONLY for clips with
+    // Fallback frame-rate detection from rendered frames - ONLY for clips with
     // no stamp.json (frameCount is our deterministic source when present).
     // This must never touch a stamped clip's fps: onMeta() has already computed
     // it exactly from frame_count/duration, and a stamped clip's frame numbers
     // are load-bearing for CRT math. Passive playback timing is noisy (display
     // refresh, dropped frames) and previously raced onMeta, silently
-    // overwriting the correct fps the moment the student pressed Play —
+    // overwriting the correct fps the moment the student pressed Play -
     // which made every frame-step jump the wrong amount of real time.
     if (v0 && !v0.frameCount) {
       detectFps(vid, fps => {
@@ -2018,13 +2018,13 @@ const SUPA_HEADERS = {
   document.addEventListener('keydown', onAboutKey, true);
 
   // Keeps the sign-in form's fields in state on every keystroke, WITHOUT a
-  // render() — a full re-render would rebuild the <input> and drop the
+  // render() - a full re-render would rebuild the <input> and drop the
   // cursor position while someone is still typing. State only needs to be
   // caught up before the next moment something ELSE causes a re-render (a
   // validation error, the returning-participant confirm landing).
   window.__formInput = function(field, value) {
     state[field] = value;
-    // Re-check the remembered-login match on every keystroke — targeted
+    // Re-check the remembered-login match on every keystroke - targeted
     // update only (same cursor-preserving reason as above), never render().
     if (field === 'formName') renderRememberedConfirm();
   };
@@ -2117,13 +2117,13 @@ const SUPA_HEADERS = {
     /* ---------- returning-participant lookup ----------
        Fires on the name field losing focus. Degrades to a total no-op
        (no confirm, no error) if the RPC isn't installed yet or the
-       request fails — see lookupReturning(). Never auto-submits.
+       request fails - see lookupReturning(). Never auto-submits.
 
-       Blur is not only caused by tabbing away — clicking the Start button
+       Blur is not only caused by tabbing away - clicking the Start button
        ALSO blurs the name field, as the first half of that same click. If
        this handler called render() synchronously here (before the network
-       request), it would rebuild the whole login view — Start button
-       included — in the middle of that click, and the browser drops a
+       request), it would rebuild the whole login view - Start button
+       included - in the middle of that click, and the browser drops a
        click whose mousedown and mouseup/click land on two different DOM
        nodes. So nothing touches the DOM until the lookup has actually
        resolved; by then any click that caused this blur has already been
@@ -2132,10 +2132,10 @@ const SUPA_HEADERS = {
       const typed = state.formName.trim();
       if (!typed) { state.returning = null; return; }
       // Already resolved for this exact text (e.g. blurring twice without
-      // retyping) — nothing new to look up or show.
+      // retyping) - nothing new to look up or show.
       if (state.returning && state.returning.forName === typed) return;
       const found = await lookupReturning(typed);
-      // Stale by the time it resolved — the text changed again, or the
+      // Stale by the time it resolved - the text changed again, or the
       // participant already moved past the login screen entirely.
       if (state.formName.trim() !== typed || state.view !== 'login') return;
       state.returning = found ? { forName: typed, exists: true, ...found } : null;
@@ -2148,7 +2148,7 @@ const SUPA_HEADERS = {
       state.formStatus = r.role;
       state.formAge = r.ageGroup;
       state.returning = null;
-      // The confirm's Continue doubles as Start — the participant already
+      // The confirm's Continue doubles as Start - the participant already
       // said "yes, that's me", so there's nothing left to fill in.
       return doLogin(r.canonicalName, r.role, r.ageGroup);
     }
@@ -2156,13 +2156,13 @@ const SUPA_HEADERS = {
       const r = state.returning;
       if (!r) return;
       // A distinct stored name, so this person's marks are never merged with
-      // — or blocked by — the other participant who already used this name.
+      // - or blocked by - the other participant who already used this name.
       state.formName = `${r.forName} (${r.nextSuffix})`;
       state.returning = null;
       return render();
     }
     /* ---------- remembered-login inline confirm ----------
-       Device-local, no network round trip — this is just "sign in again
+       Device-local, no network round trip - this is just "sign in again
        with exactly what was used last time", so it goes straight through
        doLogin() the same way the returning-participant Continue button does. */
     if (act === 'lastlogincontinue') {
@@ -2171,17 +2171,17 @@ const SUPA_HEADERS = {
       return doLogin(last.name, last.status, last.age);
     }
     if (act === 'lastlogindifferent') {
-      // Targeted update only — the name field is very possibly still
+      // Targeted update only - the name field is very possibly still
       // focused (this button sits right under it), so a full render() here
       // would rebuild the input and drop the cursor mid-type.
       state.rememberedDismissed = true;
       renderRememberedConfirm();
       return;
     }
-    /* "How it works" — replays the first-run walkthrough (with its playable
+    /* "How it works" - replays the first-run walkthrough (with its playable
        demo) on demand from inside the player, then returns to the same clip. */
     if (act === 'howto') {
-      // "How it works" replays only the recorded demo — the three intro
+      // "How it works" replays only the recorded demo - the three intro
       // cards are a first-run-only welcome, not part of the replay.
       state.onboardReplay = true;
       state.obPhase = 'video';
@@ -2205,7 +2205,7 @@ const SUPA_HEADERS = {
     }
     if (act === 'cardback') { state.cardPage = Math.max(0, (state.cardPage || 0) - 1); return render(); }
     if (act === 'cardgoto') { state.cardPage = Math.max(0, Math.min(ONBOARD_PAGES.length - 1, Number(id) || 0)); return render(); }
-    // ---- phase 2: the demo video ---- (must NOT render() — that rebuilds
+    // ---- phase 2: the demo video ---- (must NOT render() - that rebuilds
     // the <video> and throws away its position).
     if (act === 'onboardnext') return obNext();
     if (act === 'onboardback') return obBack();
@@ -2237,7 +2237,7 @@ const SUPA_HEADERS = {
       return;
     }
 
-    // Move to the next clip WITHOUT recording anything — the escape hatch for a
+    // Move to the next clip WITHOUT recording anything - the escape hatch for a
     // clip that won't play, so a participant is never stuck on a dead video.
     if (act === 'skip') { return advanceQueue(); }
 
@@ -2251,12 +2251,12 @@ const SUPA_HEADERS = {
       if (state.flaggedClips.has(key)) return;
       state.flaggedClips.add(key);
       saveFlaggedClips();
-      renderFlagPanel();               // NOT render() — must not rebuild <video>
+      renderFlagPanel();               // NOT render() - must not rebuild <video>
       try { await reportBrokenClip(v); } catch { /* best-effort; the click still registered locally */ }
       return;
     }
 
-    // Transport controls mutate the <video> in place — never re-render here,
+    // Transport controls mutate the <video> in place - never re-render here,
     // or the element is rebuilt and playback position is lost.
     if (act === 'playpause') { togglePlay();   return; }
     if (act === 'stepback')  { stepFrames(-1); return; }
@@ -2269,10 +2269,10 @@ const SUPA_HEADERS = {
       if (vid) vid.playbackRate = state.speed;
       document.querySelectorAll('.speed-btn').forEach(b =>
         b.classList.toggle('active', b.textContent === (state.speed === 1 ? '1×' : state.speed + '×')));
-      return;   // no render — must not rebuild the <video>
+      return;   // no render - must not rebuild the <video>
     }
 
-    // Marking must NOT call render() — that would rebuild <video> and re-buffer.
+    // Marking must NOT call render() - that would rebuild <video> and re-buffer.
     if (act === 'mark') {
       const vidEl = document.getElementById('vid');
       if (!vidEl || vidEl.currentTime <= 0) { state.err = 'Play the clip first, then mark.'; return renderMarkPanel(); }
@@ -2320,7 +2320,7 @@ const SUPA_HEADERS = {
         stampFrame: v.stampFrame != null ? v.stampFrame : '',
         submittedAt: new Date().toISOString()
       };
-      // 1) Store LOCALLY first — this can never fail, so the mark is safe even
+      // 1) Store LOCALLY first - this can never fail, so the mark is safe even
       //    if the Excel helper (or, later, the network) is down.
       const rec = { ...payload, synced: false };
       annotations.push(rec);
@@ -2334,7 +2334,7 @@ const SUPA_HEADERS = {
         saveAnnotations();
       } catch (e) { /* stays queued; flushQueue() retries */ }
       state.saving = false;
-      return goNext();   // always advance — the annotation is already stored
+      return goNext();   // always advance - the annotation is already stored
     }
 
     if (act === 'retrysync') { await flushQueue(); return render(); }
@@ -2386,7 +2386,7 @@ const SUPA_HEADERS = {
       if (colRes.ok) cols = await colRes.json();
       if (vidRes.ok) vids = await vidRes.json();
       // A refused read is the usual cause of an empty library (a tightened RLS
-      // policy, a rotated key). Say so — silently showing no clips reads to a
+      // policy, a rotated key). Say so - silently showing no clips reads to a
       // participant as "the videos aren't loading", with nothing to act on.
       else state.libraryError = `The clip list could not be read (error ${vidRes.status}).`;
     } catch {
@@ -2405,7 +2405,7 @@ const SUPA_HEADERS = {
       const clips = vids
         .filter(v => v.collection_id === c.id)
         // A row with no file behind it cannot be played, and letting one
-        // through used to throw here — which killed discovery outright and
+        // through used to throw here - which killed discovery outright and
         // left the whole app stuck with an empty library.
         .filter(v => v && typeof v.storage_path === 'string' && v.storage_path)
         .sort((a, b) => a.video_number - b.video_number)
@@ -2431,7 +2431,7 @@ const SUPA_HEADERS = {
             frameCount: v.frame_count != null ? v.frame_count : null,
             recDuration: v.recording_duration_s != null ? v.recording_duration_s : null,
             stampTimeS: v.stamp_time_s != null ? v.stamp_time_s : null,
-            // Which collection it came from — recorded with the mark, but never
+            // Which collection it came from - recorded with the mark, but never
             // shown as a choice: participants just receive the next clip.
             collectionName: c.name,
             // Marks already collected for this clip; drives the running order.
@@ -2450,7 +2450,7 @@ const SUPA_HEADERS = {
       COLLECTIONS = MANUAL_COLLECTIONS.map(c => ({ ...c }));
       POOL = COLLECTIONS.flatMap(c => c.videos || []);
       if (!POOL.length && !state.libraryError) {
-        state.libraryError = 'The clip library came back empty — no videos are published yet.';
+        state.libraryError = 'The clip library came back empty - no videos are published yet.';
       }
     }
     render();
@@ -2460,7 +2460,7 @@ const SUPA_HEADERS = {
   discovery = discoverAll();
   // A restored session (page refresh) lands straight back in the player, so its
   // queue has to be rebuilt before anything can be shown. Crucially it must
-  // also leave the "Preparing your clips…" screen once that's done — the same
+  // also leave the "Preparing your clips…" screen once that's done - the same
   // hand-off the login path makes. Without it a refresh mid-study hangs on the
   // loading card until you log out and back in. `catch(()=>{})` guarantees the
   // hand-off runs even if the rebuild fails (it lands on the error screen then,
