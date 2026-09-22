@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=36">
+<link rel="stylesheet" href="styles.css?v=37">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -907,7 +907,7 @@ const SUPA_HEADERS = {
         </div>
         <div class="field">
           <label for="f-name">Part of your name</label>
-          <input id="f-name" placeholder="e.g. Ann or Ann R." autocomplete="off" maxlength="40"
+          <input id="f-name" placeholder="e.g. Gihan or Imasha P." autocomplete="off" maxlength="40"
                  value="${esc(state.formName)}"
                  oninput="window.__formInput('formName', this.value)"
                  onblur="window.__act('namecheck')">
@@ -999,12 +999,9 @@ const SUPA_HEADERS = {
 
      Everything factual here describes the study itself and is safe to state.
      The team is filled in (see the Supervisor/Co-Supervisor/External
-     Supervisor/Researchers facts below and assets/about-team.jpg). What is
-     still a [bracketed] placeholder - ethics approval number, contact email
-     - is genuinely unknown to this app and must never be invented.
-
-     TODO(Venuja): replace the remaining [bracketed] placeholders below with
-     the real ethics approval reference and a contact email address.
+     Supervisor/Researchers facts below and assets/about-team.jpg). Contact
+     routes through the feedback form at the bottom of this page rather than a
+     published email address, so nothing here needs a placeholder any more.
      ========================================================================= */
   function viewAbout() {
     return `<div class="about-page">
@@ -1054,9 +1051,8 @@ const SUPA_HEADERS = {
       <section class="about-sec">
         <h3>Ethics, privacy and your data</h3>
         <p>This study is conducted internally under the academic supervision of the Supervisor, Co-Supervisor and External Supervisor named above, at the University of Jaffna and the University of Kelaniya. It follows standard ethical practice for non-clinical, non-identifying observational research: participation is voluntary and anonymous, and no patient data is collected or stored.</p>
-        <!-- TODO(Venuja): still a placeholder - fill in once confirmed -->
         <dl class="about-facts">
-          <div><dt>Contact</dt><dd class="placeholder">[Contact email address]</dd></div>
+          <div><dt>Contact</dt><dd>Questions or concerns? Use the <a class="about-inline-link" href="#feedback" onclick="window.__act('aboutfeedback'); return false;">feedback form below</a> - it reaches the research team directly.</dd></div>
         </dl>
         <ul class="about-bullets">
           <li><b>No full names.</b> A part of your name is enough - it exists only to group your own responses together so repeated clips are never shown to you twice.</li>
