@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=35">
+<link rel="stylesheet" href="styles.css?v=36">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -640,6 +640,65 @@ const SUPA_HEADERS = {
     return { ok: true };
   }
 
+  /* ---------- reveal on scroll ----------
+     The About page lands as one tall block of text; letting each section
+     arrive as it scrolls into view makes it feel written for the reader
+     rather than dumped on them.
+
+     Progressive enhancement on purpose: the class that HIDES a section is
+     added here in JS, never in the stylesheet. If this never runs - reduced
+     motion, a thrown error earlier in render - every section is simply
+     visible, which is the safe way to fail.
+
+     This checks each pending section's POSITION once per scroll frame rather
+     than using an IntersectionObserver. An observer only fires when a section
+     crosses a threshold, and a jump - the drawer's "Send feedback" scrolls
+     straight down to #feedback, and Cmd/Ctrl+End does the same - can carry a
+     whole section from below the fold to above it between two frames. The
+     observer never fires for it and it stays blank behind the reader. A
+     position check has no such blind spot: anything at or above the reveal
+     line is revealed, however it got there. */
+  let revealPending = [];
+  let revealQueued = false;
+  function revealSweep() {
+    revealQueued = false;
+    const line = window.innerHeight * 0.92;     // where a section reveals
+    revealPending = revealPending.filter(el => {
+      // A detached element (the view changed under us) reports all zeros, so
+      // it falls through here and drops off the list by itself.
+      if (el.getBoundingClientRect().top >= line) return true;
+      el.classList.add('in');
+      return false;
+    });
+    if (!revealPending.length) {
+      window.removeEventListener('scroll', onRevealScroll, true);
+      window.removeEventListener('resize', onRevealScroll);
+    }
+  }
+  function onRevealScroll() {
+    if (revealQueued) return;                   // at most one sweep per frame
+    revealQueued = true;
+    requestAnimationFrame(revealSweep);
+  }
+  function setupReveals() {
+    const reduce = window.matchMedia &&
+                   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+    const fresh = [];
+    document.querySelectorAll('.about-hero, .about-sec, .about-credit').forEach(el => {
+      if (el.dataset.reveal) return;            // already handled this element
+      el.dataset.reveal = '1';
+      el.classList.add('reveal');
+      fresh.push(el);
+    });
+    if (!fresh.length) return;
+    revealPending = revealPending.concat(fresh);
+    // capture:true so a scroll inside a nested scroller counts too
+    window.addEventListener('scroll', onRevealScroll, true);
+    window.addEventListener('resize', onRevealScroll);
+    requestAnimationFrame(revealSweep);         // whatever is already in view
+  }
+
   /* ---------- render ---------- */
   function render() {
     saveSession();
@@ -667,6 +726,7 @@ const SUPA_HEADERS = {
     else if (state.view === 'about') html = viewAbout();
     app.innerHTML = html;
     renderDrawer();
+    setupReveals();
 
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
     // The walkthrough's <video> is a fresh element on every full render -
@@ -831,25 +891,27 @@ const SUPA_HEADERS = {
            both columns so that order holds on a wide screen too, where the
            form and the panel sit side by side. -->
       <header class="study-hero">
-        <span class="hero-eyebrow">Research study</span>
+        <span class="hero-eyebrow">Clinical research study</span>
         <h2 class="hero-title">Capillary Refill Time (CRT) Visual Assessment Study</h2>
-        <p class="hero-lede">This study investigates how people judge capillary refill by eye. You will
-        watch short clips of a nail bed being pressed and released, and mark the moment you see the
-        colour return - your marks measure how much that judgement varies from one observer to the next.</p>
+        <p class="hero-lede">Capillary refill time rests on a judgement clinicians make at the bedside
+        every day - and one that two equally experienced colleagues can read differently. You are invited
+        to make that judgement on short recorded clips, so the variation between skilled observers can be
+        measured properly. Your clinical eye is the instrument here, and we are grateful for your time.</p>
       </header>
 
       <div class="card login-card">
         <div class="page-head">
-          <h2>Participant information</h2>
-          <p class="muted">Three quick details, then you can start. No patient data is collected.</p>
+          <h2>About you</h2>
+          <p class="muted">Three details about your background, so readings can be compared across
+          professions and levels of experience. No patient data is collected.</p>
         </div>
         <div class="field">
-          <label for="f-name">Name or initials</label>
-          <input id="f-name" placeholder="e.g. A.P. or Ann" autocomplete="off" maxlength="40"
+          <label for="f-name">Part of your name</label>
+          <input id="f-name" placeholder="e.g. Ann or Ann R." autocomplete="off" maxlength="40"
                  value="${esc(state.formName)}"
                  oninput="window.__formInput('formName', this.value)"
                  onblur="window.__act('namecheck')">
-          <span class="field-hint">Part of your name or initials is enough - it only groups your responses.</span>
+          <span class="field-hint">A part of your name is enough - it only groups your responses.</span>
           <div id="rememberedConfirm">${rememberedConfirmHtml()}</div>
           ${viewReturningConfirm()}
         </div>
@@ -876,22 +938,18 @@ const SUPA_HEADERS = {
           <span class="qm close" aria-hidden="true">&rdquo;</span>
         </figure>
 
-        <!-- The study itself is introduced in the hero above, so this panel
-             carries only what a participant still needs to know before they
+        <!-- The study itself is introduced in the hero above and the walkthrough
+             after sign-in walks through how it works step by step, so this panel
+             carries only what a participant still needs to know BEFORE they
              agree to take part: what it costs them, and what is recorded. -->
         <div class="about-body">
-          <span class="about-eyebrow">At a glance</span>
-          <ul class="about-steps">
-            <li><span class="n">1</span><div><b>${SET_SIZE} clips</b> per set, a few seconds each</div></li>
-            <li><span class="n">2</span><div><b>About 5 minutes</b> - stop after any set</div></li>
-            <li><span class="n">3</span><div><b>One button</b> to press, nothing to choose</div></li>
-          </ul>
+          <span class="about-eyebrow">Before you start</span>
 
           <div class="about-note">
-            <b>No full names.</b> Initials are enough - they only group your own responses. No patient data is collected.
+            <b>No full names.</b> A part of your name is enough - it only groups your own responses. No patient data is collected.
           </div>
 
-          <p class="about-foot">Saves automatically · Works on a phone</p>
+          <p class="about-foot">About 5 minutes · stop after any set · saves automatically</p>
           <button class="about-more" onclick="window.__act('about')">Read more about this study ${icon('fwd', 13)}</button>
         </div>
       </aside>
@@ -1001,9 +1059,9 @@ const SUPA_HEADERS = {
           <div><dt>Contact</dt><dd class="placeholder">[Contact email address]</dd></div>
         </dl>
         <ul class="about-bullets">
-          <li><b>No full names.</b> Initials are enough - they exist only to group your own responses together so repeated clips are never shown to you twice.</li>
+          <li><b>No full names.</b> A part of your name is enough - it exists only to group your own responses together so repeated clips are never shown to you twice.</li>
           <li><b>No patient data.</b> The recordings show a nail bed and nothing that identifies anybody.</li>
-          <li><b>What is stored.</b> Your initials, professional role, age band, and the timing of each mark you make.</li>
+          <li><b>What is stored.</b> The part of your name you enter, your professional role, age band, and the timing of each mark you make.</li>
           <li><b>Taking part is voluntary.</b> You can stop after any set, and you are never obliged to finish.</li>
         </ul>
       </section>
@@ -1070,20 +1128,20 @@ const SUPA_HEADERS = {
   const ONBOARD_PAGES = [
     {
       eyebrow: 'Step 1 of 3 · Watch',
-      title: 'What you’re watching',
-      body: 'Pressure is held on the nail bed, then released. The screen flashes <b>green</b> for a moment at the release - that is when timing starts.',
+      title: 'What each clip shows',
+      body: 'Pressure is held on the nail bed, then released. The frame flashes <b>green</b> at the moment of release, so timing runs from a known point - you are never asked to work a stopwatch yourself.',
       illo: 'press'
     },
     {
       eyebrow: 'Step 2 of 3 · Respond',
-      title: 'What to do',
-      body: 'The instant the colour returns, press <b>Mark colour change</b>. Then press <b>Save &amp; Next</b>.',
+      title: 'Your reading, as you would call it',
+      body: 'Mark the instant you judge the colour to have returned, exactly as you would at the bedside. Press <b>Mark colour change</b>, then <b>Save &amp; Next</b>. Nothing is scored against you - the differences between clinicians are the finding.',
       illo: 'mark'
     },
     {
       eyebrow: 'Step 3 of 3 · Begin',
-      title: 'Your clips come to you',
-      body: `Clips arrive one after another in sets of <b>${SET_SIZE}</b> - nothing to choose, nothing repeated, everything saved as you go. If a clip won't play, just press <b>Skip clip</b> to move on to the next one.`,
+      title: 'The clips come to you',
+      body: `Clips arrive one after another in sets of <b>${SET_SIZE}</b> - nothing to choose, nothing repeated, everything saved as you go. Stop after any set; a short run is genuinely useful. If a clip will not play, press <b>Skip clip</b>.`,
       illo: 'pick'
     }
   ];
