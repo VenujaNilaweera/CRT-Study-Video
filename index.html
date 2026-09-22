@@ -904,12 +904,12 @@ const SUPA_HEADERS = {
           <p class="muted">Three quick details, then you can start. No patient data is collected.</p>
         </div>
         <div class="field">
-          <label for="f-name">Name or initials</label>
-          <input id="f-name" placeholder="e.g. A.P. or Ann" autocomplete="off" maxlength="40"
+          <label for="f-name">Part of your name</label>
+          <input id="f-name" placeholder="e.g. Ann or Ann R." autocomplete="off" maxlength="40"
                  value="${esc(state.formName)}"
                  oninput="window.__formInput('formName', this.value)"
                  onblur="window.__act('namecheck')">
-          <span class="field-hint">Part of your name or initials is enough - it only groups your responses.</span>
+          <span class="field-hint">A part of your name is enough - it only groups your responses.</span>
           <div id="rememberedConfirm">${rememberedConfirmHtml()}</div>
           ${viewReturningConfirm()}
         </div>
@@ -944,7 +944,7 @@ const SUPA_HEADERS = {
           <span class="about-eyebrow">Before you start</span>
 
           <div class="about-note">
-            <b>No full names.</b> Initials are enough - they only group your own responses. No patient data is collected.
+            <b>No full names.</b> A part of your name is enough - it only groups your own responses. No patient data is collected.
           </div>
 
           <p class="about-foot">About 5 minutes · stop after any set · saves automatically</p>
@@ -1057,9 +1057,9 @@ const SUPA_HEADERS = {
           <div><dt>Contact</dt><dd class="placeholder">[Contact email address]</dd></div>
         </dl>
         <ul class="about-bullets">
-          <li><b>No full names.</b> Initials are enough - they exist only to group your own responses together so repeated clips are never shown to you twice.</li>
+          <li><b>No full names.</b> A part of your name is enough - it exists only to group your own responses together so repeated clips are never shown to you twice.</li>
           <li><b>No patient data.</b> The recordings show a nail bed and nothing that identifies anybody.</li>
-          <li><b>What is stored.</b> Your initials, professional role, age band, and the timing of each mark you make.</li>
+          <li><b>What is stored.</b> The part of your name you enter, your professional role, age band, and the timing of each mark you make.</li>
           <li><b>Taking part is voluntary.</b> You can stop after any set, and you are never obliged to finish.</li>
         </ul>
       </section>
