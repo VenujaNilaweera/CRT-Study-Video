@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=35">
+<link rel="stylesheet" href="styles.css?v=36">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -640,6 +640,65 @@ const SUPA_HEADERS = {
     return { ok: true };
   }
 
+  /* ---------- reveal on scroll ----------
+     The About page lands as one tall block of text; letting each section
+     arrive as it scrolls into view makes it feel written for the reader
+     rather than dumped on them.
+
+     Progressive enhancement on purpose: the class that HIDES a section is
+     added here in JS, never in the stylesheet. If this never runs - reduced
+     motion, a thrown error earlier in render - every section is simply
+     visible, which is the safe way to fail.
+
+     This checks each pending section's POSITION once per scroll frame rather
+     than using an IntersectionObserver. An observer only fires when a section
+     crosses a threshold, and a jump - the drawer's "Send feedback" scrolls
+     straight down to #feedback, and Cmd/Ctrl+End does the same - can carry a
+     whole section from below the fold to above it between two frames. The
+     observer never fires for it and it stays blank behind the reader. A
+     position check has no such blind spot: anything at or above the reveal
+     line is revealed, however it got there. */
+  let revealPending = [];
+  let revealQueued = false;
+  function revealSweep() {
+    revealQueued = false;
+    const line = window.innerHeight * 0.92;     // where a section reveals
+    revealPending = revealPending.filter(el => {
+      // A detached element (the view changed under us) reports all zeros, so
+      // it falls through here and drops off the list by itself.
+      if (el.getBoundingClientRect().top >= line) return true;
+      el.classList.add('in');
+      return false;
+    });
+    if (!revealPending.length) {
+      window.removeEventListener('scroll', onRevealScroll, true);
+      window.removeEventListener('resize', onRevealScroll);
+    }
+  }
+  function onRevealScroll() {
+    if (revealQueued) return;                   // at most one sweep per frame
+    revealQueued = true;
+    requestAnimationFrame(revealSweep);
+  }
+  function setupReveals() {
+    const reduce = window.matchMedia &&
+                   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+    const fresh = [];
+    document.querySelectorAll('.about-hero, .about-sec, .about-credit').forEach(el => {
+      if (el.dataset.reveal) return;            // already handled this element
+      el.dataset.reveal = '1';
+      el.classList.add('reveal');
+      fresh.push(el);
+    });
+    if (!fresh.length) return;
+    revealPending = revealPending.concat(fresh);
+    // capture:true so a scroll inside a nested scroller counts too
+    window.addEventListener('scroll', onRevealScroll, true);
+    window.addEventListener('resize', onRevealScroll);
+    requestAnimationFrame(revealSweep);         // whatever is already in view
+  }
+
   /* ---------- render ---------- */
   function render() {
     saveSession();
@@ -667,6 +726,7 @@ const SUPA_HEADERS = {
     else if (state.view === 'about') html = viewAbout();
     app.innerHTML = html;
     renderDrawer();
+    setupReveals();
 
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
     // The walkthrough's <video> is a fresh element on every full render -
@@ -876,22 +936,18 @@ const SUPA_HEADERS = {
           <span class="qm close" aria-hidden="true">&rdquo;</span>
         </figure>
 
-        <!-- The study itself is introduced in the hero above, so this panel
-             carries only what a participant still needs to know before they
+        <!-- The study itself is introduced in the hero above and the walkthrough
+             after sign-in walks through how it works step by step, so this panel
+             carries only what a participant still needs to know BEFORE they
              agree to take part: what it costs them, and what is recorded. -->
         <div class="about-body">
-          <span class="about-eyebrow">At a glance</span>
-          <ul class="about-steps">
-            <li><span class="n">1</span><div><b>${SET_SIZE} clips</b> per set, a few seconds each</div></li>
-            <li><span class="n">2</span><div><b>About 5 minutes</b> - stop after any set</div></li>
-            <li><span class="n">3</span><div><b>One button</b> to press, nothing to choose</div></li>
-          </ul>
+          <span class="about-eyebrow">Before you start</span>
 
           <div class="about-note">
             <b>No full names.</b> Initials are enough - they only group your own responses. No patient data is collected.
           </div>
 
-          <p class="about-foot">Saves automatically · Works on a phone</p>
+          <p class="about-foot">About 5 minutes · stop after any set · saves automatically</p>
           <button class="about-more" onclick="window.__act('about')">Read more about this study ${icon('fwd', 13)}</button>
         </div>
       </aside>

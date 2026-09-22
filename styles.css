@@ -78,6 +78,13 @@
 
 html { -webkit-text-size-adjust: 100%; }
 
+/* iOS paints its own grey box over every tap target. The app already has
+   :active states for that feedback, so switch the platform one off rather
+   than have both fire on one press. */
+button, a, input, select, textarea, [onclick] {
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
   font-family: 'Inter', system-ui, sans-serif;
   color: var(--ink);
@@ -95,7 +102,15 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
 .hdr {
   background: var(--header-bg);
   color: var(--header-fg);
+  /* viewport-fit=cover lets the page run under the notch and the rounded
+     corners, so the header has to hold itself clear of them: without this the
+     brand sits under the status bar on a notched iPhone, and under the camera
+     cutout once the phone is turned sideways. The plain padding stays first
+     as the fallback for anything without env(). */
   padding: 14px clamp(14px, 4vw, 26px);
+  padding-top: max(14px, env(safe-area-inset-top));
+  padding-right: max(clamp(14px, 4vw, 26px), env(safe-area-inset-right));
+  padding-left: max(clamp(14px, 4vw, 26px), env(safe-area-inset-left));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -172,7 +187,11 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
   padding: 12px 13px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  font-size: 15px;
+  /* 16px is a hard iOS requirement, not a taste call: Safari on iPhone zooms
+     the whole page in when a focused field is smaller than this, and never
+     zooms back out - the form is left half off-screen. Same for the feedback
+     textarea below. */
+  font-size: 16px;
   font-family: 'Inter', sans-serif;
   background: var(--surface-2);
   color: var(--ink);
@@ -335,19 +354,6 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   margin-bottom: 16px;
 }
 
-.about-steps { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 9px; }
-.about-steps li { display: flex; align-items: center; gap: 11px; font-size: 13.5px; color: var(--ink-2); }
-.about-steps .n {
-  flex: none;
-  width: 25px; height: 25px;
-  border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--teal-soft);
-  color: var(--teal);
-  font-family: var(--mono); font-size: 12px; font-weight: 700;
-}
-.about-steps b { color: var(--ink); }
-
 .about-note {
   border-left: 3px solid var(--teal);
   background: var(--surface-2);
@@ -418,6 +424,7 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 .drawer-backdrop {
   position: fixed; inset: 0;
   background: rgba(4, 10, 12, .55);
+  -webkit-backdrop-filter: blur(2px);   /* Safari, iOS included, needs the prefix */
   backdrop-filter: blur(2px);
   z-index: 60;
   animation: modalFade .18s ease both;
@@ -572,7 +579,7 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   padding: 12px 13px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  font-size: 15px; font-family: 'Inter', sans-serif; line-height: 1.55;
+  font-size: 16px; font-family: 'Inter', sans-serif; line-height: 1.55;
   background: var(--surface-2); color: var(--ink);
   resize: vertical; min-height: 110px;
   transition: border-color .15s, box-shadow .15s;
@@ -600,6 +607,21 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   text-align: center;
 }
 .about-bottom { margin-top: 28px; }
+
+/* ---- Reveal on scroll ----
+   Pairs with setupReveals() in index.html. The hiding rule only ever applies
+   to elements JS has marked, so nothing here can leave content invisible on
+   its own - see the note on that function. */
+.reveal { opacity: 0; transform: translateY(18px); }
+.reveal.in {
+  opacity: 1;
+  transform: none;
+  transition: opacity .55s cubic-bezier(.22,.8,.3,1),
+              transform .55s cubic-bezier(.22,.8,.3,1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .reveal.in { opacity: 1; transform: none; transition: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .drawer-backdrop, .drawer { animation: none !important; }
@@ -664,9 +686,6 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 }
 .about-quote .qm.open  { animation: breathe 5.5s ease-in-out infinite; }
 .about-quote .qm.close { animation: breathe 5.5s ease-in-out infinite 2.7s; }
-.about-steps .n { animation: floatY 4.5s ease-in-out infinite; }
-.about-steps li:nth-child(2) .n { animation-delay: .5s; }
-.about-steps li:nth-child(3) .n { animation-delay: 1s; }
 
 /* Phones: About sits BELOW the sign-in form. */
 /* Roomy desktops: same two equal columns, just a little more breathing room. */
@@ -695,7 +714,6 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   .login-layout.intro *,
   .about-panel,
   .about-quote .qm,
-  .about-steps .n,
   .about-quote .caret { animation: none !important; }
   .about-quote .qm { opacity: .5; }
   .about-quote .caret { opacity: 0; }
@@ -763,6 +781,21 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 }
 .ob-dot:hover { background: var(--teal-2); }
 .ob-dot.active { background: var(--teal); width: 22px; border-radius: 5px; }
+
+/* Each page of the walkthrough is a fresh render, so this stagger replays on
+   every Next and Back: the page assembles itself instead of swapping in as
+   one flat block, which is what makes a turn feel like a turn. Kept short -
+   the whole sequence is done in under half a second, because someone clicking
+   straight through three pages should never be waiting on it. */
+@keyframes obIlloIn {
+  from { opacity: 0; transform: scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+.onboard-card .ob-illo-wrap { animation: obIlloIn .5s cubic-bezier(.22,.8,.3,1) .04s both; }
+.onboard-card .ob-title     { animation: riseIn .45s cubic-bezier(.22,.8,.3,1) .11s both; }
+.onboard-card .ob-body      { animation: riseIn .45s cubic-bezier(.22,.8,.3,1) .17s both; }
+.onboard-card .ob-dots      { animation: riseIn .45s cubic-bezier(.22,.8,.3,1) .23s both; }
+.onboard-card .ob-nav       { animation: riseIn .45s cubic-bezier(.22,.8,.3,1) .29s both; }
 
 .ob-nav { display: flex; gap: 10px; }
 .ob-nav .btn.neutral { flex: 0 0 auto; }
@@ -956,6 +989,8 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 
 @media (prefers-reduced-motion: reduce) {
   .onboard-card,
+  .onboard-card .ob-illo-wrap, .onboard-card .ob-title,
+  .onboard-card .ob-body, .onboard-card .ob-dots, .onboard-card .ob-nav,
   .ob-mini-mark, .ob-ripple, .ob-mini-result, .ob-set-dots span {
     animation: none !important;
   }
@@ -974,6 +1009,9 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   position: fixed; inset: 0; z-index: 90;
   background: #000;
   display: flex; align-items: center; justify-content: center;
+  /* Stops a swipe at the edge of the demo from rubber-banding the page behind
+     it (iOS) or triggering pull-to-refresh (Android) mid-walkthrough. */
+  overscroll-behavior: contain;
 }
 /* The recording is 1920x936 once its letterbox band is cropped off, so the
    stage is cut to that exact ratio (2.0513:1) and grows to whichever of the
@@ -984,6 +1022,14 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   position: relative;
   width: min(100vw, calc(100vh * var(--ob-ar)));
   height: min(100vh, calc(100vw / var(--ob-ar)));
+  /* iPhone Safari cannot put a <div> into fullscreen (only a <video> element),
+     so on iOS this overlay stays inside the normal page with the toolbars
+     showing. 100vh there is the LARGE viewport - taller than what is actually
+     on screen - which pushed the bottom of the frame, Next button and all,
+     under the Safari toolbar. dvh/dvw track the visible viewport instead. The
+     vh/vw pair above stays as the fallback for browsers without dvh. */
+  width: min(100dvw, calc(100dvh * var(--ob-ar)));
+  height: min(100dvh, calc(100dvw / var(--ob-ar)));
   background: #000;
   overflow: hidden;
 }
@@ -1047,6 +1093,7 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 .ob-btn.back {
   background: rgba(255,255,255,.16); color: #fff;
   padding: .45em .65em;
+  -webkit-backdrop-filter: blur(3px);   /* Safari, iOS included, needs the prefix */
   backdrop-filter: blur(3px);
 }
 .ob-btn.back:hover:not(:disabled) { background: rgba(255,255,255,.3); }
@@ -1088,12 +1135,15 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
     inset: auto;
     top: 0; left: 100%;
     width: 100vh; height: 100vw;
+    width: 100dvh; height: 100dvw;       /* visible viewport, see .ob-stage */
     transform-origin: 0 0;
     transform: rotate(90deg);
   }
   .ob-full:not(.rotate-intro) .ob-stage {
     width: min(100vh, calc(100vw * var(--ob-ar)));
     height: min(100vw, calc(100vh / var(--ob-ar)));
+    width: min(100dvh, calc(100dvw * var(--ob-ar)));
+    height: min(100dvw, calc(100dvh / var(--ob-ar)));
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1285,12 +1335,88 @@ body[data-view="player"] .run-bar { flex: none; }
   background: var(--teal-soft); color: var(--teal);
   animation: riseIn .45s cubic-bezier(.22,.8,.3,1) both;
 }
+
+/* ---- Finishing a set: a short, rewarding beat ----
+   The tick pops in, its check draws itself, one ring expands out of it, and
+   the words follow in sequence. The whole thing is under a second on purpose:
+   it should read as an acknowledgement of work done, not a cutscene someone
+   has to sit through twenty times an evening. */
+@keyframes tickPop {
+  0%   { opacity: 0; transform: scale(.4); }
+  60%  { opacity: 1; transform: scale(1.12); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes tickDraw { to { stroke-dashoffset: 0; } }
+@keyframes tickRing {
+  0%   { opacity: .5; transform: scale(.8); }
+  100% { opacity: 0;  transform: scale(2); }
+}
+
+.run-done .run-tick, .fb-done .run-tick {
+  position: relative;
+  animation: tickPop .5s cubic-bezier(.22,1.3,.36,1) both;
+}
+/* A pseudo-element so the ring can expand past the circle without nudging
+   anything around it. */
+.run-done .run-tick::after, .fb-done .run-tick::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--teal);
+  animation: tickRing .9s cubic-bezier(.22,.8,.3,1) .22s both;
+}
+/* 26 is comfortably longer than the check path (~23 units in a 24x24 box),
+   so it starts fully hidden and ends fully drawn. */
+.run-done .run-tick .ic path, .fb-done .run-tick .ic path {
+  stroke-dasharray: 26;
+  stroke-dashoffset: 26;
+  animation: tickDraw .42s cubic-bezier(.65,0,.35,1) .26s both;
+}
+.run-done h2          { animation: riseIn .5s cubic-bezier(.22,.8,.3,1) .14s both; }
+.run-done .muted      { animation: riseIn .5s cubic-bezier(.22,.8,.3,1) .22s both; }
+.run-done .small-note { animation: riseIn .5s cubic-bezier(.22,.8,.3,1) .28s both; }
+.run-done .btn        { animation: riseIn .5s cubic-bezier(.22,.8,.3,1) .34s both; }
+.run-done .btn + .btn { animation-delay: .4s; }
+.fb-done p            { animation: riseIn .5s cubic-bezier(.22,.8,.3,1) .18s both; }
+.fb-done .btn         { animation: riseIn .5s cubic-bezier(.22,.8,.3,1) .3s both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .run-done .run-tick, .fb-done .run-tick,
+  .run-done h2, .run-done .muted, .run-done .small-note, .run-done .btn,
+  .fb-done p, .fb-done .btn { animation: none !important; }
+  .run-done .run-tick::after, .fb-done .run-tick::after { display: none; }
+  .run-done .run-tick .ic path, .fb-done .run-tick .ic path {
+    stroke-dashoffset: 0; animation: none !important;
+  }
+}
+
 /* The buffering pill, reused as a standalone "preparing…" state. */
+/* The standalone "preparing your clips…" card. A skeleton shaped like the
+   video that is coming makes the wait read as the page assembling itself,
+   rather than a spinner hanging over an empty box. flex-wrap (rather than a
+   column) keeps the spinner and its label side by side on the line below. */
 .vid-loading.static {
-  position: static;
+  position: relative;
+  flex-wrap: wrap;
+  align-content: center;
   background: transparent;
   color: var(--muted);
-  padding: 26px 0;
+  padding: 4px 0 20px;
+}
+.vid-loading.static::before {
+  content: "";
+  flex: 0 0 100%;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 6px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(100deg,
+    var(--surface-2) 30%, var(--line) 48%, var(--surface-2) 66%);
+  background-size: 220% 100%;
+  animation: skeletonShimmer 1.5s ease-in-out infinite;
+}
+@keyframes skeletonShimmer {
+  from { background-position: 130% 0; }
+  to   { background-position: -30% 0; }
 }
 
 .player-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -1534,6 +1660,8 @@ body[data-view="player"] .run-bar { flex: none; }
   color: #fff; font-family: var(--mono); font-size: 13px;
   border-radius: var(--radius);
   z-index: 2;
+  overflow: hidden;              /* keeps the sweep bar inside the rounded box */
+  animation: modalFade .25s ease both;
 }
 .vid-loading .spin, .ob-loading .spin {
   width: 15px; height: 15px; border-radius: 50%;
@@ -1541,6 +1669,28 @@ body[data-view="player"] .run-bar { flex: none; }
   animation: spin .7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* An indeterminate sweep along the bottom edge. On a slow connection a
+   spinner on its own starts to read as "stuck"; something travelling across
+   the frame reads as "still working", which is the honest message - we have
+   no real percentage to show, because the clip is fetched in one piece. */
+@keyframes loadSweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(500%); }
+}
+.vid-loading::after {
+  content: "";
+  position: absolute; left: 0; bottom: 0;
+  width: 20%; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--teal), transparent);
+  animation: loadSweep 1.3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vid-loading, .vid-loading::after,
+  .vid-loading.static::before { animation: none !important; }
+  .vid-loading::after { opacity: .6; }
+}
 
 /* ---- Per-viewer watermark ----
    Sits in the corners only: the centre of the frame carries the clinical
@@ -1736,9 +1886,28 @@ kbd {
   .nav-row { gap: 8px; }
   .vid-row .num { width: 34px; height: 34px; }
   /* Slimmer header on the list screens; it is hidden inside the player. */
-  .hdr { padding: 9px 12px; gap: 8px; }
+  .hdr {
+    padding: 9px 12px; gap: 8px;
+    /* The shorthand above would otherwise throw away the safe-area padding
+       set on .hdr further up - and a phone this narrow is exactly the one
+       with a notch to clear. */
+    padding-top: max(9px, env(safe-area-inset-top));
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-left: max(12px, env(safe-area-inset-left));
+    /* One row, always. Letting the actions wrap onto a second row cost ~50px
+       of the screen before the participant has read a word. The full study
+       name is repeated in the hero immediately below, so clipping it here
+       loses nothing. */
+    flex-wrap: nowrap;
+  }
+  .hdr .brand { flex: 1; min-width: 0; }
+  .hdr .brand > div { min-width: 0; }
+  .hdr h1 {
+    font-size: 15px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .hdr .actions { flex: none; flex-wrap: nowrap; }
   .hdr .sub { display: none; }
-  .hdr h1 { font-size: 15px; }
   .hdr button { padding: 7px 10px; font-size: 12px; }
 }
 
