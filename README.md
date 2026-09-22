@@ -1,6 +1,6 @@
 # CRT Perception Study
 
-A web application for collecting **capillary refill timing (CRT) measurements** from medical professionals watching video clips. Each participant logs in, watches a clip of a capillary refill test (the colour-return moment after releasing finger pressure on skin), and presses one button at the exact instant they perceive the colour returning. The app records the precise **time and video frame** of that observation and saves it to `data.xlsx`, pooling judgements from many professionals to establish a consensus refill threshold.
+A web application for collecting **capillary refill time (CRT) measurements** from medical professionals watching video clips. Each participant signs in, watches a clip of a capillary refill test (the colour-return moment after releasing finger pressure on skin), and presses one button at the exact instant they perceive the colour returning. The app records the precise **time and video frame** of that observation and saves it straight to the study's Supabase database, pooling judgements from many professionals to establish a consensus refill threshold.
 
 ## Project Goal
 
@@ -12,111 +12,98 @@ A web application for collecting **capillary refill timing (CRT) measurements** 
 - Establish objective thresholds for colour-return detection
 - Improve clinical training and standardization
 
-**Output:** A dataset in `data.xlsx` containing time-stamped observations (with frame-level precision) from diverse medical professionals, enabling statistical analysis of perception variance.
+**Output:** A dataset of time-stamped observations (with frame-level precision) from diverse medical professionals, enabling statistical analysis of perception variance.
 
 ---
 
-## Running it
+## How the site runs today
 
-### Quick Start
+This is a **static site with a Supabase backend** - there is no local server to run for participants to use it.
 
-1. **Start the Excel saver** (writes each click into `data.xlsx` on port 8787):
-   ```bash
-   python excel_helper.py
-   ```
-   This starts a small HTTP server that accepts annotation submissions and appends them to the workbook.
+- `index.html` + `styles.css` are the entire app: login, the onboarding walkthrough, the clip player, and the About/feedback page.
+- The live site is **GitHub Pages**, serving the `gui` branch directly (Settings → Pages, no build step). Push to `gui` and it's live within a minute or two.
+- All data - clips, collections, and every submitted annotation - lives in **Supabase**:
+  - `collections` and `videos` tables describe the clip library (the `videos` table also carries each clip's timing metadata, see [Stamp / timing metadata](#stamp--timing-metadata-per-clip)).
+  - The `vids` Storage bucket holds the actual `.mp4` files, served publicly.
+  - The `annotations` table receives one row per submitted mark (see [Data output](#data-output)).
+  - A couple of RPC functions (`crt_seen_videos`, `crt_lookup_participant`) back the least-annotated-first queue and the "welcome back" name lookup - both optional, see [SQL migrations](#sql-migrations-run-once-per-supabase-project).
+- The app talks to Supabase with its **public anon key** (safe to expose - it's baked into `index.html`), which can only insert annotations, never read them back or edit videos/collections. Everything else is locked down by Row Level Security plus `supabase_hardening.sql`.
 
-2. **Serve the site** (makes videos discoverable and listable on port 8899):
-   ```bash
-   python -m http.server 8899
-   ```
-
-3. Open <http://127.0.0.1:8899/index.html> in a browser.
-
-### Important: Don't use live-reload servers
-
-**Do not** use VS Code "Live Server", `live-server`, or other file-watching servers. Here's why:
-- Every time a mark is saved, `excel_helper.py` writes `data.xlsx` inside this folder
-- Live-reload servers detect that file change and refresh the page
-- This restarts the current video clip, which is annoying for the participant
-- Plain `python -m http.server` doesn't watch files, so it won't trigger unwanted refreshes
-
-The app now persists login and video position across reloads, so even accidental refreshes don't lose your place.
-
-### Remote access (phone/tablet on same WiFi)
-
-When you run the servers on your PC, other devices on the same network can access them:
-- Instead of `127.0.0.1`, replace it with your PC's LAN IP (e.g., `192.168.1.100`)
-- `excel_helper.py` automatically detects the correct IP and logs it on startup
-- The web app will save to your PC's workbook, not the device's local storage
+Nothing here needs `excel_helper.py`, a local `videos/` folder, or `data.xlsx` any more - those belonged to an earlier, local-only version of this app. They're described at the bottom under [Legacy scripts](#legacy-scripts) for anyone who still has a use for them, but the live site doesn't call any of them.
 
 ---
 
-## Adding and Preparing Videos
+## Running it locally
 
-### Dropping clips in
+To work on the UI itself, you don't need your own Supabase project - `index.html` already points at the study's real one.
 
-1. Place your `.mp4` clips in the **`videos/`** folder (next to `index.html`)
-2. The app auto-discovers everything there - no code editing needed
-3. Reload the browser page and new clips appear
-
-### Browser compatibility & encoding
-
-⚠️ **A file ending in `.mp4` is *not* guaranteed to play in a browser.** Screen recorders often produce MPEG-4 Part 2, DivX, or HEVC codecs that browsers refuse to play.
-
-**To ensure all clips play:**
 ```bash
-python convert_videos.py
+python -m http.server 8899
 ```
-This re-encodes anything that isn't already **H.264 (Baseline)** to a browser-safe format, while preserving:
-- Frame rate (fps)
-- Frame count (so frame numbers remain valid)
-- Duration and timing (timestamps don't shift)
 
-Originals are backed up in `videos/_original_backup/`.
+Then open <http://127.0.0.1:8899/index.html>. That's it - clips, collections and the onboarding video load straight from Supabase Storage, exactly as they do on the live site.
 
-### Multiple collections (folders)
+The app persists login and video position to `localStorage` and restores them on reload, so an accidental refresh mid-clip doesn't lose your place.
 
-Want to organize videos into separate collections (e.g., "Beginner clips" vs. "Advanced clips")?
+### Remote access (phone/tablet on the same WiFi)
 
-Edit `VIDEO_FOLDERS` near the top of `index.html`:
-```javascript
-const VIDEO_FOLDERS = [
-  { id: 'col1', name: 'Collection 01', icon: '📁', path: 'videos/' },
-  { id: 'col2', name: 'Collection 02', icon: '📁', path: 'videos2/' },
-  // Add more as needed
-];
-```
-Each collection shows up as a separate tile on the collections screen.
+Instead of `127.0.0.1`, use your PC's LAN IP (e.g. `192.168.1.100`) so another device on the same network can open the same server.
+
+---
+
+## Setting up your own Supabase project
+
+Only needed if you're standing up a **separate** instance of this study (a different Supabase project from the one already wired into `index.html`).
+
+1. **Create the tables.** You'll need `collections`, `videos`, and `annotations`. The shape each needs is documented at the top of the three SQL files below (they describe the columns they depend on) and in the `videos` payload shape under [Stamp / timing metadata](#stamp--timing-metadata-per-clip) and the `annotations` row shape under [Data output](#data-output).
+2. **Create a public Storage bucket** named `vids` for the `.mp4` files.
+3. **Point `index.html` at your project** - update `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `STORAGE_BUCKET` near the top of the `<script>` block (search for `SUPABASE BACKEND`).
+4. **Run the SQL migrations** (below) in the Supabase dashboard's SQL Editor.
+5. **Upload your clips** with `studio.py` (below).
+
+### SQL migrations (run once per Supabase project)
+
+Each file is self-contained, explains itself at the top, and is safe to run more than once. Open the Supabase dashboard → SQL Editor → New query → paste the file → Run.
+
+| File | What it's for | If you skip it |
+|---|---|---|
+| `supabase_hardening.sql` | Locks down the `annotations` table so the public key can only insert well-formed rows - nothing malformed, nothing read back. | Recommended for any project taking public submissions. |
+| `supabase_balancing.sql` | Lets the app hand each participant the **least-annotated** clips first, via the `crt_seen_videos` RPC, without giving the public key read access to `annotations`. | The app falls back to a plain random order - it still works, just without active balancing. |
+| `supabase_returning_users.sql` | Powers the "welcome back" prompt: recognising a name that's signed in before and prefilling their role/age. Adds the `crt_lookup_participant` RPC. | The name field behaves like a normal first-time field - no prefill, no error either. |
+
+The app is written to degrade gracefully if any of these haven't been run yet - it just quietly does the simpler thing instead of erroring.
+
+---
+
+## Adding video clips
+
+Clips are added with **`studio.py`**, a desktop tool (`python studio.py`) that takes a folder of raw recordings all the way to the live study site in one pass: add the release-flash overlay → re-encode for the browser → upload to Supabase Storage → create the database rows → group the clips into collections. Read the docstring at the top of the file for the full pipeline and what it needs (ffmpeg/ffprobe on PATH, `pip install opencv-python requests`, and a Supabase **service role** key pasted into Settings once - never the public key, and never committed; it's saved to `studio_config.json`, which is git-ignored).
+
+Reload the site afterwards and the new clips just appear - nothing in `index.html` needs editing.
 
 ### Frame rate overrides
 
-Frame rate defaults to **30 fps** and is used to convert marked times into frame numbers. If individual clips run at a different rate, add overrides to `FPS_OVERRIDES` in `index.html`:
+Frame rate for the mark → frame-number conversion comes from each clip's `videos` row; if you need a manual override for a specific file, add it to `FPS_OVERRIDES` near the top of `index.html`, keyed by the clip's storage path:
 ```javascript
 const FPS_OVERRIDES = {
   'slow_motion_clip.mp4': 60,
-  'low_fps_clip.mp4': 24,
 };
 ```
 
 ---
 
-## JSON Stamp Files: Timestamping the Pressure Release
+## Stamp / timing metadata (per clip)
 
-### What are stamp files?
-
-Each video clip **can** have an optional `<filename>.stamp.json` file that records **when the finger pressure was released** during the test. This is critical for calculating real capillary refill time (CRT).
+Each recording **can** carry metadata for the moment the finger pressure was released - critical for calculating real capillary refill time (CRT), as opposed to just "time since the clip started."
 
 **Why it matters:**
-- Raw video time starts at 0 (beginning of recording)
+- Raw video time starts at 0 (beginning of the recording)
 - But the actual test begins *after* the camera starts, when the tester applies pressure
-- The "stamp" marks the moment pressure is released - that's when CRT measurement officially starts
-- Without a stamp, the app treats the start of the clip as time 0
-- With a stamp, the app calculates **real CRT = (markedFrame − stampFrame) / realFps**, giving the true refill time since release
+- The release moment marks when CRT measurement officially starts
+- Without it, the app treats the start of the clip as time 0
+- With it, the app calculates **real CRT = (markedFrame − stampFrame) / realFps**, the true refill time since release
 
-### Stamp file format
-
-A stamp file is JSON with this structure:
+For a raw recording (before it goes through `studio.py`), that's a `<filename>.stamp.json` sidecar file next to the `.mp4`:
 
 ```json
 {
@@ -132,249 +119,177 @@ A stamp file is JSON with this structure:
 }
 ```
 
-#### Field reference
-
 | Field | Type | Description |
-|-------|------|-------------|
+|-------|------|--------------|
 | `video` | string | Filename of the `.mp4` it describes (informational) |
-| `trigger_source` | string | Where the timestamp came from (e.g., "PC", "RPi", "manual") |
-| `frame_count` | integer | Total frames in the video recording (used for precise fps calculation) |
-| `recording_duration_s` | float | Duration of the recording in seconds (used to calculate exact fps: `frame_count / recording_duration_s`) |
-| `fps` | float | Frame rate (fallback; overridden by `frame_count / recording_duration_s` if both are present) |
-| `stamped` | boolean | Whether a pressure-release timestamp exists for this clip (`true` = yes, `false` = no) |
-| `stamped_frame` | integer | **Frame number where pressure was released** (the reference point for CRT measurement) |
+| `trigger_source` | string | Where the timestamp came from (e.g. "PC", "RPi", "manual") |
+| `frame_count` | integer | Total frames in the recording (used for precise fps calculation) |
+| `recording_duration_s` | float | Duration of the recording in seconds (`frame_count / recording_duration_s` = real fps) |
+| `fps` | float | Frame rate fallback; overridden by `frame_count / recording_duration_s` when both are present |
+| `stamped` | boolean | Whether a pressure-release timestamp exists for this clip |
+| `stamped_frame` | integer | **Frame number where pressure was released** - the reference point for CRT measurement |
 | `stamp_time_s` | float | Time in seconds when pressure was released (video-file time) |
 | `post_stamp_tail_s` | float | Duration after release (how long the colour-return portion was recorded) |
 
-### How it's used in the app
+`studio.py` reads this sidecar file and carries the same fields into the `videos` table row it creates (`encoded_fps`, `frame_count`, `recording_duration_s`, `stamped`, `stamped_frame` - see the app's `SUPABASE BACKEND` comment block in `index.html` for the exact column names it reads). Once a clip is live, the player uses those columns the same way regardless of how the clip got there:
 
-1. **Video playback:** The player automatically jumps to the release frame when a stamped clip loads
-2. **Frame calculation:** Marked observations are converted to frame numbers using the encoded file's fps
-3. **CRT calculation:** Real refill time = `(markedFrame − stampFrame) / realFps`
-4. **Display:** The scrub bar shows a tiny tick at the release point; the readout shows time *since release* (never negative)
+1. **Video playback:** jumps to the release frame on load, for a stamped clip
+2. **Frame calculation:** marks are converted to frame numbers using the clip's encoded fps
+3. **CRT calculation:** real refill time = `(markedFrame − stampFrame) / realFps`
+4. **Display:** the scrub bar shows a tick at the release point; the readout shows time *since release* (never negative)
 
-### Creating stamp files
-
-If you're generating CRT clips (e.g., with a Raspberry Pi or automated recording setup), create a `.stamp.json` file for each `.mp4`:
-
-**Naming:** The JSON filename must match the video exactly, minus the extension:
-- `2026-08-16_13-31-57-901.mp4` → `2026-08-16_13-31-57-901.stamp.json`
-
-**Generating the timestamp:** Capture the frame number where you release pressure in real time (e.g., via a hardware trigger, GPIO pin, or button press), then calculate:
-```
-realFps = frame_count / recording_duration_s
-stamp_time_s = stamped_frame / fps  (file fps, not real fps)
-```
-
-**Example workflow (Python):**
-```python
-import json
-from pathlib import Path
-
-stamp = {
-    "video": "mytest.mp4",
-    "trigger_source": "GPIO_button",
-    "frame_count": 300,
-    "recording_duration_s": 9.96,  # measured from file metadata
-    "fps": 30.0,  # encoded frame rate
-    "stamped": True,
-    "stamped_frame": 120,  # button press on frame 120
-    "stamp_time_s": 4.0,
-    "post_stamp_tail_s": 5.96
-}
-
-Path("mytest.stamp.json").write_text(json.dumps(stamp, indent=2))
-```
-
-### Clips without stamps
-
-If a clip has no `.stamp.json` file, the app:
-- Uses the raw video timeline (time 0 = start of clip)
-- Detects fps from playback (or uses `FPS_OVERRIDES`)
-- Treats marked observations as raw video times, not CRT
-- The "Time from pressure release" label changes to just "Video time"
+**Clips without a stamp** use the raw video timeline (time 0 = start of clip); the "Time from pressure release" label changes to just "Video time".
 
 ---
 
-## Data Output
+## The onboarding walkthrough
 
-### Excel workbook: `data.xlsx`
+The first time someone signs in with a new name, they see a two-phase intro before reaching the player:
 
-Every time a participant marks and saves a clip, a new row is appended to `data.xlsx` (sheet **Annotations**).
+1. **Three illustrated cards** - a short "how this works" explanation (Next/Back, with progress dots), ending on "Watch the demo".
+2. **A recorded demo video** that auto-plays and pauses itself at six captioned moments, walking through an actual clip end-to-end. "Next" resumes it; the last step drops straight into the player.
 
-#### Columns
+Completing it (or skipping it) is recorded per **participant name**, not per browser or device - several people can share one phone in a ward without each having to sit through it, but the same name never sees it twice.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| **Name** | text | Participant's full name |
-| **Role** | text | Profession (Nurse, Doctor, Medical student, Paramedic, Researcher, Other) |
-| **Age Group** | text | Age bracket (18-24, 25-34, 35-44, 45-54, 55+) |
-| **Collection** | text | Folder/collection name (e.g., "Collection 01") |
-| **Video #** | integer | Sequence in the collection (1-indexed) |
-| **Video Title** | text | Auto-generated title (e.g., "CRT Test 01") |
-| **CRT (s)** | float (3 decimal places) | **Study value:** Real refill time since release. Calculated as `(markedFrame − stampFrame) / realFps` for stamped clips; raw mark time for unstamped clips |
-| **Mark file-time (s)** | float | Position in the video file where colour return was marked (in seconds) |
-| **Release file-time (s)** | float | Position in the video file where pressure was released (from `stampFrame / fps`); empty if no stamp |
-| **FPS** | float | Capture frame rate that drives CRT calculation (from `.stamp.json` or manual override; 30 fps default) |
-| **Frame #** | integer | Recording frame number at the mark (calculated as `round(markTime × fps)`) |
-| **Stamp frame** | integer | Recording frame of the pressure release; empty if no stamp |
-| **Submitted At** | ISO 8601 timestamp | When the mark was saved (UTC) |
+The **"How it works"** link in the side menu replays just the recorded video (no cards - those are a first-run welcome only), for anyone who wants a refresher later.
 
-### CSV export
+On a phone, the video forces itself into full-screen landscape regardless of which way the phone is actually held (with a brief "turn your phone sideways" card first), so the demo is always readable.
 
-Each participant can click **"Export log"** in the header to download a CSV of all their own marks. Columns match the Excel layout above.
+---
+
+## Data output
+
+Every submitted mark is inserted as one row into Supabase's **`annotations`** table.
+
+| Column | Description |
+|---|---|
+| `display_name` | Participant's name, as typed at sign-in |
+| `role` | Profession (Nurse, Doctor, Medical student, Paramedic, Researcher, Other) |
+| `age_group` | Age bracket (18-24, 25-34, 35-44, 45-54, 55+) |
+| `video_id` | The clip's id in the `videos` table |
+| `skipped` | Whether the clip was skipped instead of marked |
+| `mark_file_time_s` | Position in the video file where colour return was marked (seconds) |
+| `frame_number` | Frame number at the mark, `Math.floor(markTime × fps)` |
+| `crt_s` | **Study value:** real refill time since release, `(frame_number − stamp_frame_used) / fps_used` for stamped clips; raw mark time for unstamped ones |
+| `fps_used` | Capture frame rate driving the CRT calculation |
+| `release_file_time_s` | Position in the video file where pressure was released; empty if unstamped |
+| `stamp_frame_used` | Recording frame of the pressure release; empty if unstamped |
+| `submitted_at` | ISO 8601 timestamp of the submission (UTC) |
 
 ### Understanding the data
 
-**For stamped clips:**
-- **CRT (s)** is the true refill time since pressure release - this is your study value
-- **Frame #** and **Stamp frame** let you trace back to the exact frames in the original recording
-- **Release file-time (s)** tells you where in the encoded `.mp4` the release occurs
+**For stamped clips:** `crt_s` is the true refill time since pressure release - this is the study value. `frame_number` and `stamp_frame_used` let you trace back to the exact frames in the original recording.
 
-**For unstamped clips:**
-- **CRT (s)** is the same as **Mark file-time (s)** - it's just raw video time
-- No **Stamp frame** or **Release file-time**
-- Useful for sanity-checking timings and sequences
-
----
-
-## Architecture & Storage
-
-### Client-side (browser)
-
-- **Session persistence:** Login, current video, and position are saved to `localStorage` and restored on page reload
-- **Annotation queuing:** Marks are saved to local storage immediately, then synced to the backend
-- **Offline resilience:** If the Excel helper is unreachable, marks stay queued locally; the "N unsaved" button lets users retry
-
-### Server-side (Python)
-
-- **excel_helper.py (port 8787):** HTTP server that receives annotation submissions and appends them to `data.xlsx`
-  - Accepts CORS requests from any origin
-  - Handles concurrent requests with thread pooling
-  - Auto-creates the workbook and sheet on first run
-  - Returns row number and workbook path in JSON response
-
-- **HTTP server (port 8899):** Plain Python file server
-  - Lists files in `videos/` and `videos2/` (if configured)
-  - Serves `.mp4`, `.stamp.json`, and other assets
-  - No special logic - just standard HTTP directory serving
-
----
-
-## Project Structure
-
-```
-CRT-Study-Video/
-├── index.html              # Main web app (single-page, ~850 lines)
-├── styles.css              # Theme tokens and layout
-├── excel_helper.py         # Backend: Excel workbook server (port 8787)
-├── convert_videos.py       # Video re-encoding utility
-├── data.xlsx               # Output spreadsheet (created on first run)
-├── README.md               # This file
-├── videos/                 # Video clips go here
-│   ├── mytest.mp4
-│   ├── mytest.stamp.json   # (optional) Pressure release timestamp
-│   └── ...
-├── videos/_original_backup/  # Backups from convert_videos.py
-└── work/                    # Build/utility scripts (not needed for running the app)
-```
+**For unstamped clips:** `crt_s` equals `mark_file_time_s` - it's just raw video time, with no `stamp_frame_used` or `release_file_time_s`. Useful for sanity-checking timings and sequences.
 
 ---
 
 ## Features
 
+### Serving order
+- **Least-annotated-first:** clips are queued so every recording in the library collects a comparable number of judgements, not just the first few taking them all (needs `supabase_balancing.sql`)
+- **Sets of 20:** clips come in runs of 20 with a natural stopping point; "Continue" starts the next set with fresh clips
+- **Never repeats:** a participant is never shown a clip they've already marked
+
 ### UI/UX
-- **Dark mode & light mode:** Toggle with the theme button; preference is saved
-- **Responsive design:** Optimized for phone, tablet, and desktop
-- **Keyboard shortcuts:** Space (play/pause), ← → (frame step), Shift+← → (10-frame jump), M (mark), N (save & next), R (restart)
-- **Playback speed controls:** 0.25×, 0.5×, 1× - useful for slow-motion analysis
-- **Frame-by-frame navigation:** Pause and step one frame at a time with arrow keys
-- **Scrub bar with release marker:** Visual indicator of where the pressure release frame lies
+- **Dark mode & light mode:** toggle from the side menu; preference is saved
+- **Responsive design:** built for phone, tablet, and desktop
+- **Keyboard shortcuts (player):** Space or K (play/pause), ← → or , . (frame step; Shift = 10 frames), ↓ ↑ or J L (seek 1s), M (mark), N (save & next), R (restart)
+- **Keyboard shortcuts (onboarding):** → (next), ← (back), Esc (skip)
+- **"Welcome back":** offers to continue as the last name/role/age used on this device, and can recognise a returning name from a different device too (needs `supabase_returning_users.sql`)
 
 ### Robustness
-- **Session recovery:** Login and video position survive accidental page reloads (or live-reload events)
-- **Sync queue:** Marks stay queued locally if the backend is offline; retry with the "N unsaved" button
-- **Video metadata detection:** Auto-measures frame rate from playback (with timestamp accuracy) for clips without overrides
-- **Graceful fallbacks:** If folder listing fails (e.g., `file://` opens), you can manually list videos in `MANUAL_COLLECTIONS`
+- **Session recovery:** login and video position survive an accidental page reload
+- **Sync queue:** if Supabase is briefly unreachable, marks stay queued locally; a "N unsaved" button lets the participant retry
+- **Full-clip preload:** the next clip loads ahead of time so pressing "Next" doesn't stall on a slow connection
+- **"Flag a problem":** a one-click report for a clip that won't play, distinct from Skip - tells the research team exactly which clip failed, no typing required
 
 ### Data integrity
-- **Frame-accurate timing:** Uses `Math.floor(time × fps)` to ensure consistent frame numbering (never rounds, which would be off by ±0.5 frames)
-- **Precise CRT calculation:** Bridges the gap between encoding frame rate (fps in the `.mp4` file) and capture frame rate (from `.stamp.json`), using frame numbers as the stable reference
+- **Frame-accurate timing:** uses `Math.floor(time × fps)`, never rounds, so frame numbers are never off by half a frame
+- **Precise CRT calculation:** bridges encoding frame rate (the `.mp4` file's own fps) and capture frame rate (from the stamp metadata) using frame numbers as the stable reference
+
+### Getting in touch
+- **About page:** background on the study, the research team, and the ethics/privacy statement
+- **Feedback form:** goes straight to the research team by email (via FormSubmit, with a `mailto:` fallback if that ever fails)
 
 ---
 
 ## Tips & Troubleshooting
 
 ### Videos won't play
-- Re-encode with `python convert_videos.py` - they're likely not H.264 Baseline
-- Check the browser console (F12) for specific codec errors
+- They need to be H.264 (Baseline) with AAC audio - `studio.py` re-encodes for this during upload
+- Check the browser console (F12) for a specific codec error
 
-### Marks not saving to Excel
-- Ensure `excel_helper.py` is running on the correct IP/port
-- From the browser, check if the "N unsaved" button appears; click it to retry
-- Verify `data.xlsx` is not open in Excel (file locks prevent writes)
+### Marks not saving
+- Check the browser console for a failed request to Supabase
+- The "N unsaved" button appears if marks are queued locally - click it to retry
+- Confirm `SUPABASE_URL` / `SUPABASE_ANON_KEY` in `index.html` still match your project, and that `supabase_hardening.sql` hasn't been run in a way that blocks inserts
+
+### A new participant doesn't get "least-annotated-first" order, or a returning name isn't recognised
+- Those need `supabase_balancing.sql` / `supabase_returning_users.sql` to have been run - see [SQL migrations](#sql-migrations-run-once-per-supabase-project). The app itself won't error either way, it just falls back to the simpler behaviour.
 
 ### Frame numbers seem off
-- Check that the stamp file's `frame_count` is accurate (must match actual frame count in the `.mp4`)
-- Verify the video's encoded fps matches your `FPS_OVERRIDES` (or none, to use default 30)
+- Check the clip's `frame_count` and `recording_duration_s` in the `videos` table match the actual recording
+- Verify the clip's encoded fps, or add an entry to `FPS_OVERRIDES`
 
-### Phone can't reach the server
-- Use your PC's LAN IP, not `127.0.0.1`
-- Both servers (`excel_helper.py` and `http.server`) must be reachable from the phone
-- Check firewall settings if the phone is on a different WiFi network
+---
+
+## Project structure
+
+```
+CRT-Study-Video/
+├── index.html                    # The entire web app (single page)
+├── styles.css                    # Theme tokens and layout
+├── studio.py                     # Desktop tool: raw recordings -> live site (flash, encode, upload, DB rows)
+├── supabase_hardening.sql        # SQL migration - lock down annotation inserts
+├── supabase_balancing.sql        # SQL migration - least-annotated-first serving
+├── supabase_returning_users.sql  # SQL migration - "welcome back" name lookup
+├── make_walkthrough_images.py    # Build script for the onboarding cards' illustrations
+├── assets/                       # Images + the onboarding demo video, served by the site
+├── walkthrough_src/              # Source crops for make_walkthrough_images.py
+├── requirements.txt              # Python dependencies for the scripts above
+└── README.md                     # This file
+```
+
+### Legacy scripts
+
+`excel_helper.py` and `convert_videos.py` belong to an earlier, local-only version of this app (annotate into `data.xlsx`, drop clips into a local `videos/` folder). The live site doesn't call either any more - `studio.py` + Supabase replaced that whole workflow. They're kept here for reference only.
 
 ---
 
 ## Git Branch & GitHub Account Organization
 
-⚠️ **IMPORTANT: This repository has two remotes - make sure you're pushing to the correct one!**
+⚠️ **This repository can have two remotes - make sure you're pushing to the correct one.**
 
-### Your account (origin) - Primary development
+### Your account (origin) - primary development
 - **GitHub:** https://github.com/VenujaNilaweera/CRT-Study-Video
-- **Branch:** `gui` (your active branch for new features)
-- **Push to:** `origin` (this is your repository)
-- Use this for: Your own development, GUI improvements, and original code
+- **Branch:** `gui` - what GitHub Pages actually serves; pushing here goes live
+- Use this for your own development and GUI improvements
 
-### Pansilu's account (upstream) - Reference/original
+### Pansilu's account (upstream) - reference/original, if you've added it
 - **GitHub:** https://github.com/PansiluHarshan/CRT-Study-Video
-- **Branch:** `main` (do not push here)
-- **Pull from:** `upstream` only (to stay synced if needed)
-- Use this for: Reviewing original code, understanding architecture
+- **Branch:** `main` - do not push here
+- Pull-only, to stay synced with the original if needed
 
-### Key Commands
+### Key commands
 
-**To check which remote you're using:**
+**Check which remote you're using:**
 ```bash
 git remote -v
 ```
 
-**To push ONLY to your account (origin/gui):**
+**Push ONLY to your account:**
 ```bash
 git push origin gui
 ```
 
-**To pull Pansilu's changes (read-only):**
+**Pull Pansilu's changes (read-only), if `upstream` is configured:**
 ```bash
 git fetch upstream
-git diff upstream/main  # review before merging
+git diff upstream/main   # review before merging
 ```
 
 **Avoid accidentally pushing to upstream:**
 ```bash
 git remote set-url --push upstream DISABLE
 ```
-
-**Your active branches:**
-- `gui` - Your current branch (push here)
-- `main` - Synced from origin (don't edit this)
-
----
-
-## Files Reference
-
-- **index.html** (~850 lines) - Complete web app: login form, collections browser, video player with frame-stepping, marking UI, keyboard shortcuts, session persistence, annotation queuing, CSV export
-- **styles.css** - CSS custom properties for theme colors; responsive grid, flexbox layouts, dark/light mode support
-- **excel_helper.py** (~160 lines) - HTTP server (port 8787) that receives annotations via POST and appends them to the Excel workbook
-- **convert_videos.py** - Re-encodes videos to H.264 Baseline for browser playback (not included in this README; add as needed)
-
-
