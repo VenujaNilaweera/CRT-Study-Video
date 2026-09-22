@@ -238,27 +238,12 @@ h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; line-height: 1
    ========================================================================== */
 .login-layout {
   display: grid;
-  /* Wide screens: the study title and its introduction sit in the LEFT column
-     with the form directly beneath them, and the quote panel fills the whole
-     RIGHT column beside both. That uses the empty upper-right space the old
-     full-width hero left behind, and drops the total height enough that the
-     Start button and the panel both fit one laptop/desktop screen with no
-     scroll. The single-column phone/tablet stacking is set at <=860px and is
-     untouched. */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-areas:
-    "hero  panel"
-    "form  panel";
-  grid-template-rows: auto 1fr;
-  column-gap: 26px;
-  row-gap: 18px;
+  gap: 22px;
   align-items: start;
   max-width: 1000px;
   margin: 4px auto;
 }
-.study-hero { grid-area: hero; }
-.login-card { grid-area: form; }
-.about-panel { grid-area: panel; align-self: start; }
 .login-card { margin: 0; }
 /* Subordinate to the study title above it - this is a form label, not a
    second headline competing with the name of the study. */
@@ -273,11 +258,10 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 .about-panel { padding: clamp(16px, 2.4vw, 22px); }
 
 /* ---- Study title + one-paragraph introduction ----
-   Sits at the top of the LEFT column, directly above the form (see the grid
-   areas on .login-layout). It is still first in the DOM, so it is read before
-   the form and the panel: the study is named, then explained, and only then
-   does the form start asking for details. */
+   Spans the full grid so it is read BEFORE either column: the study is named,
+   then explained, and only then does the form start asking for details. */
 .study-hero {
+  grid-column: 1 / -1;
   margin-bottom: 2px;
 }
 .hero-eyebrow {
@@ -309,7 +293,11 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   line-height: 1.55;
   color: var(--ink-2);
   margin: 0;
-  max-width: 68ch;
+  /* Runs the full width of the hero (which spans both columns) so the
+     introduction is a few wide lines rather than a tall narrow block - that
+     is what keeps the form and panel below it on one screen without scroll.
+     No max-width cap here on purpose. */
+  max-width: none;
 }
 
 .about-panel {
@@ -317,6 +305,40 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
   padding: clamp(20px, 3vw, 30px);
+}
+
+/* ---- Sign-in cards: lift + a light that follows the cursor ----
+   Gives the two cards some life under a real mouse. The lift is CSS-only; the
+   glow needs the pointer position, which setupPointerGlow() writes to --mx/--my
+   (it runs only for a fine pointer and never under reduced motion). The glow
+   layer is a ::before UNDER the content (z-index 0 vs the children's 1), so it
+   lights the card without ever tinting the text on top of it. */
+.login-card, .about-panel {
+  position: relative;
+  transition: transform .28s cubic-bezier(.22,.8,.3,1), box-shadow .28s ease;
+}
+.login-card > *, .about-panel > * { position: relative; z-index: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .login-card:hover, .about-panel:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg);
+  }
+  .login-card::before, .about-panel::before {
+    content: "";
+    position: absolute; inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .35s ease;
+    background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%),
+      color-mix(in srgb, var(--teal) 15%, transparent) 0%, transparent 62%);
+  }
+  .login-card:hover::before, .about-panel:hover::before { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-card, .about-panel { transition: none; }
+  .login-card:hover, .about-panel:hover { transform: none; }
 }
 
 /* ---- Pull quote with 66 / 99 quote marks ---- */
@@ -728,33 +750,10 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
 }
 /* Tablets in portrait: stack, but keep the panel comfortably wide. */
 @media (max-width: 980px) and (min-width: 861px) {
-  .login-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 20px; }
-}
-/* Short laptop screens (e.g. 1366x768): the two-column login already fits a
-   tall monitor, but a 768px-high one is ~76px over once the browser chrome is
-   subtracted. Tighten the vertical rhythm just for that case - wide enough for
-   the two columns, but not tall - so the Start button clears the fold without
-   changing anything on a normal-height screen or a phone. */
-@media (min-width: 861px) and (max-height: 820px) {
-  body[data-view="login"] .wrap { padding-top: 8px; }
-  .login-layout { row-gap: 10px; }
-  .study-hero { margin-bottom: 0; }
-  .hero-title { margin-bottom: 5px; }
-  .hero-lede { line-height: 1.45; }
-  .login-card.card { padding: 15px 18px; }
-  .login-card .page-head { margin-bottom: 7px; }
-  .login-card .field { margin-bottom: 8px; }
+  .login-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
 }
 @media (max-width: 860px) {
-  .login-layout {
-    grid-template-columns: 1fr;
-    /* Back to a plain stack: hero, then form, then panel. Resetting the areas
-       and rows is what stops the two-column template above from lingering. */
-    grid-template-areas: "hero" "form" "panel";
-    grid-template-rows: none;
-    gap: 16px; margin-top: 4px; max-width: 560px;
-  }
-  .about-panel { align-self: auto; }
+  .login-layout { grid-template-columns: 1fr; gap: 16px; margin-top: 4px; max-width: 560px; }
   .about-quote { padding: 4px 20px 16px; }
   .about-quote .qm { font-size: 44px; }
   .about-body h3 { font-size: 17px; }

@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=37">
+<link rel="stylesheet" href="styles.css?v=38">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -699,6 +699,37 @@ const SUPA_HEADERS = {
     requestAnimationFrame(revealSweep);         // whatever is already in view
   }
 
+  /* ---------- pointer glow ----------
+     A soft light that follows the cursor across the sign-in cards, so the page
+     feels responsive under the hand rather than flat. Enhancement only: it
+     runs solely on a real mouse (hover + fine pointer) and never under reduced
+     motion. On a phone, or if it never runs, the cards are exactly as before.
+     A render replaces the DOM, so the listeners are re-attached each time; the
+     dataset guard stops the same node being wired twice. rAF-throttled so a
+     fast mouse can't schedule more than one style write per frame. */
+  function setupPointerGlow() {
+    if (!window.matchMedia) return;
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    document.querySelectorAll('.login-card, .about-panel').forEach(card => {
+      if (card.dataset.glow) return;
+      card.dataset.glow = '1';
+      let queued = false, lx = 0, ly = 0;
+      card.addEventListener('pointermove', e => {
+        const r = card.getBoundingClientRect();
+        lx = (e.clientX - r.left) / r.width * 100;
+        ly = (e.clientY - r.top) / r.height * 100;
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => {
+          queued = false;
+          card.style.setProperty('--mx', lx + '%');
+          card.style.setProperty('--my', ly + '%');
+        });
+      });
+    });
+  }
+
   /* ---------- render ---------- */
   function render() {
     saveSession();
@@ -727,6 +758,7 @@ const SUPA_HEADERS = {
     app.innerHTML = html;
     renderDrawer();
     setupReveals();
+    setupPointerGlow();
 
     if (state.view === 'player') { attachVideoEvents(); startClock(); } else stopClock();
     // The walkthrough's <video> is a fresh element on every full render -
