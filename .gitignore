@@ -31,7 +31,7 @@ pip-delete-this-directory.txt
 # Node build scratch (contains a symlink into a machine-local cache)
 work/
 
-# Collected data — generated at runtime, not source
+# Collected data - generated at runtime, not source
 data.xlsx
 
 # Personal analysis scripts

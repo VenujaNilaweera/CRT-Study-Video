@@ -15,7 +15,7 @@
 --
 --  1. It also fixes a real bug: two different people can share initials
 --     (two "Hiruni" medical students, say). Without this, the second one to
---     sign in would be treated as the SAME participant as the first — and
+--     sign in would be treated as the SAME participant as the first - and
 --     since clips already marked are never re-shown to "that name", the
 --     second Hiruni would see nothing at all. The lookup this file adds
 --     returns the next free "(2)", "(3)"... suffix so the app can offer her
@@ -23,11 +23,11 @@
 --     first Hiruni's.
 --
 --  2. Participants submit with the site's PUBLIC key, and that key has no
---     read access to `annotations` (see supabase_hardening.sql) — on
+--     read access to `annotations` (see supabase_hardening.sql) - on
 --     purpose, so nobody can browse other people's marks. This lookup has
 --     to run with elevated privilege to answer "does this name exist" at
 --     all, so it is a narrow SECURITY DEFINER function that returns only
---     what the sign-in form needs (a name, a role, an age group, a count) —
+--     what the sign-in form needs (a name, a role, an age group, a count) -
 --     never a full row, never anybody else's timing data.
 --
 --  The client degrades gracefully if this file hasn't been run yet: the
@@ -42,7 +42,7 @@
 -- same lookup), consistent with how the app already normalises names on the
 -- client (nameKey() in index.html). A name that already carries a "(2)",
 -- "(3)"... suffix is treated as its own separate identity, not folded back
--- into the base name — that's the whole point of the suffix.
+-- into the base name - that's the whole point of the suffix.
 create or replace function public.crt_lookup_participant(p_name text)
 returns table (
   exists_flag   boolean,

@@ -57,7 +57,7 @@ When you run the servers on your PC, other devices on the same network can acces
 ### Dropping clips in
 
 1. Place your `.mp4` clips in the **`videos/`** folder (next to `index.html`)
-2. The app auto-discovers everything there — no code editing needed
+2. The app auto-discovers everything there - no code editing needed
 3. Reload the browser page and new clips appear
 
 ### Browser compatibility & encoding
@@ -110,7 +110,7 @@ Each video clip **can** have an optional `<filename>.stamp.json` file that recor
 **Why it matters:**
 - Raw video time starts at 0 (beginning of recording)
 - But the actual test begins *after* the camera starts, when the tester applies pressure
-- The "stamp" marks the moment pressure is released — that's when CRT measurement officially starts
+- The "stamp" marks the moment pressure is released - that's when CRT measurement officially starts
 - Without a stamp, the app treats the start of the clip as time 0
 - With a stamp, the app calculates **real CRT = (markedFrame − stampFrame) / realFps**, giving the true refill time since release
 
@@ -227,12 +227,12 @@ Each participant can click **"Export log"** in the header to download a CSV of a
 ### Understanding the data
 
 **For stamped clips:**
-- **CRT (s)** is the true refill time since pressure release — this is your study value
+- **CRT (s)** is the true refill time since pressure release - this is your study value
 - **Frame #** and **Stamp frame** let you trace back to the exact frames in the original recording
 - **Release file-time (s)** tells you where in the encoded `.mp4` the release occurs
 
 **For unstamped clips:**
-- **CRT (s)** is the same as **Mark file-time (s)** — it's just raw video time
+- **CRT (s)** is the same as **Mark file-time (s)** - it's just raw video time
 - No **Stamp frame** or **Release file-time**
 - Useful for sanity-checking timings and sequences
 
@@ -257,7 +257,7 @@ Each participant can click **"Export log"** in the header to download a CSV of a
 - **HTTP server (port 8899):** Plain Python file server
   - Lists files in `videos/` and `videos2/` (if configured)
   - Serves `.mp4`, `.stamp.json`, and other assets
-  - No special logic — just standard HTTP directory serving
+  - No special logic - just standard HTTP directory serving
 
 ---
 
@@ -287,7 +287,7 @@ CRT-Study-Video/
 - **Dark mode & light mode:** Toggle with the theme button; preference is saved
 - **Responsive design:** Optimized for phone, tablet, and desktop
 - **Keyboard shortcuts:** Space (play/pause), ← → (frame step), Shift+← → (10-frame jump), M (mark), N (save & next), R (restart)
-- **Playback speed controls:** 0.25×, 0.5×, 1× — useful for slow-motion analysis
+- **Playback speed controls:** 0.25×, 0.5×, 1× - useful for slow-motion analysis
 - **Frame-by-frame navigation:** Pause and step one frame at a time with arrow keys
 - **Scrub bar with release marker:** Visual indicator of where the pressure release frame lies
 
@@ -306,7 +306,7 @@ CRT-Study-Video/
 ## Tips & Troubleshooting
 
 ### Videos won't play
-- Re-encode with `python convert_videos.py` — they're likely not H.264 Baseline
+- Re-encode with `python convert_videos.py` - they're likely not H.264 Baseline
 - Check the browser console (F12) for specific codec errors
 
 ### Marks not saving to Excel
@@ -327,15 +327,15 @@ CRT-Study-Video/
 
 ## Git Branch & GitHub Account Organization
 
-⚠️ **IMPORTANT: This repository has two remotes — make sure you're pushing to the correct one!**
+⚠️ **IMPORTANT: This repository has two remotes - make sure you're pushing to the correct one!**
 
-### Your account (origin) — Primary development
+### Your account (origin) - Primary development
 - **GitHub:** https://github.com/VenujaNilaweera/CRT-Study-Video
 - **Branch:** `gui` (your active branch for new features)
 - **Push to:** `origin` (this is your repository)
 - Use this for: Your own development, GUI improvements, and original code
 
-### Pansilu's account (upstream) — Reference/original
+### Pansilu's account (upstream) - Reference/original
 - **GitHub:** https://github.com/PansiluHarshan/CRT-Study-Video
 - **Branch:** `main` (do not push here)
 - **Pull from:** `upstream` only (to stay synced if needed)
@@ -365,16 +365,16 @@ git remote set-url --push upstream DISABLE
 ```
 
 **Your active branches:**
-- `gui` — Your current branch (push here)
-- `main` — Synced from origin (don't edit this)
+- `gui` - Your current branch (push here)
+- `main` - Synced from origin (don't edit this)
 
 ---
 
 ## Files Reference
 
-- **index.html** (~850 lines) — Complete web app: login form, collections browser, video player with frame-stepping, marking UI, keyboard shortcuts, session persistence, annotation queuing, CSV export
-- **styles.css** — CSS custom properties for theme colors; responsive grid, flexbox layouts, dark/light mode support
-- **excel_helper.py** (~160 lines) — HTTP server (port 8787) that receives annotations via POST and appends them to the Excel workbook
-- **convert_videos.py** — Re-encodes videos to H.264 Baseline for browser playback (not included in this README; add as needed)
+- **index.html** (~850 lines) - Complete web app: login form, collections browser, video player with frame-stepping, marking UI, keyboard shortcuts, session persistence, annotation queuing, CSV export
+- **styles.css** - CSS custom properties for theme colors; responsive grid, flexbox layouts, dark/light mode support
+- **excel_helper.py** (~160 lines) - HTTP server (port 8787) that receives annotations via POST and appends them to the Excel workbook
+- **convert_videos.py** - Re-encodes videos to H.264 Baseline for browser playback (not included in this README; add as needed)
 
 
