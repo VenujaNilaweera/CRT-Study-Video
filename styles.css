@@ -262,7 +262,6 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
    then explained, and only then does the form start asking for details. */
 .study-hero {
   grid-column: 1 / -1;
-  max-width: 760px;
   margin-bottom: 2px;
 }
 .hero-eyebrow {
@@ -294,7 +293,11 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   line-height: 1.55;
   color: var(--ink-2);
   margin: 0;
-  max-width: 68ch;
+  /* Runs the full width of the hero (which spans both columns) so the
+     introduction is a few wide lines rather than a tall narrow block - that
+     is what keeps the form and panel below it on one screen without scroll.
+     No max-width cap here on purpose. */
+  max-width: none;
 }
 
 .about-panel {
@@ -302,6 +305,40 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
   padding: clamp(20px, 3vw, 30px);
+}
+
+/* ---- Sign-in cards: lift + a light that follows the cursor ----
+   Gives the two cards some life under a real mouse. The lift is CSS-only; the
+   glow needs the pointer position, which setupPointerGlow() writes to --mx/--my
+   (it runs only for a fine pointer and never under reduced motion). The glow
+   layer is a ::before UNDER the content (z-index 0 vs the children's 1), so it
+   lights the card without ever tinting the text on top of it. */
+.login-card, .about-panel {
+  position: relative;
+  transition: transform .28s cubic-bezier(.22,.8,.3,1), box-shadow .28s ease;
+}
+.login-card > *, .about-panel > * { position: relative; z-index: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .login-card:hover, .about-panel:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg);
+  }
+  .login-card::before, .about-panel::before {
+    content: "";
+    position: absolute; inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .35s ease;
+    background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%),
+      color-mix(in srgb, var(--teal) 15%, transparent) 0%, transparent 62%);
+  }
+  .login-card:hover::before, .about-panel:hover::before { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-card, .about-panel { transition: none; }
+  .login-card:hover, .about-panel:hover { transform: none; }
 }
 
 /* ---- Pull quote with 66 / 99 quote marks ---- */
@@ -531,7 +568,15 @@ body[data-view="login"] .wrap { padding-top: clamp(10px, 2vw, 16px); }
   margin: 0;
   font-size: 14px;
   color: var(--ink);
+  line-height: 1.5;
 }
+.about-inline-link {
+  color: var(--teal);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--teal) 45%, transparent);
+}
+.about-inline-link:hover { border-bottom-color: var(--teal); }
 /* Text that is still a [bracketed] placeholder is visibly a placeholder,
    not mistaken for a real, confirmed detail. */
 .about-facts dd.placeholder {
