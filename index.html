@@ -2469,7 +2469,16 @@ const SUPA_HEADERS = {
         fetch(`${REST_URL}/videos?select=*&order=collection_id,video_number`, { headers: SUPA_HEADERS, cache: 'no-store' })
       ]);
       if (colRes.ok) cols = await colRes.json();
-      if (vidRes.ok) vids = await vidRes.json();
+      if (vidRes.ok) {
+        vids = await vidRes.json();
+        // Clips taken down in Studio (see supabase_retire_clips.sql) drop out
+        // here, in JS, rather than as an active=is.true filter on the query
+        // above. That is deliberate: on a project where that migration has not
+        // been run the column does not exist, and asking PostgREST for it
+        // would 400 EVERY clip request - the whole library would go dark. An
+        // absent column simply reads as undefined, i.e. "not retired".
+        vids = vids.filter(v => v && v.active !== false);
+      }
       // A refused read is the usual cause of an empty library (a tightened RLS
       // policy, a rotated key). Say so - silently showing no clips reads to a
       // participant as "the videos aren't loading", with nothing to act on.
