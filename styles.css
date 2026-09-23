@@ -1701,25 +1701,6 @@ body[data-view="player"] .run-bar { flex: none; }
 .marked .tip { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
 .marked .tip b { color: var(--go-2); }
 
-.hint {
-  margin-top: 14px;
-  padding: 14px 16px;
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
-  color: var(--muted);
-  font-size: 13.5px;
-  background: var(--surface-2);
-}
-/* On a phone this box is the difference between Restart/Skip clip being
-   visible and being pushed under the browser's own bottom bar (Safari's
-   address/tab strip eats real screen height on top of that). The label on
-   the Mark button already says the same thing ("Mark colour change"), so the
-   instruction is redundant there in a way it isn't on a roomier screen - cut
-   it there instead of fighting the browser chrome for the space back. */
-@media (max-width: 520px) {
-  .hint { display: none; }
-}
-
 /* Sits below Restart/Skip - a quiet, one-click "this clip is broken" report,
    deliberately understated so it never competes with Save & Next. */
 .flag-row .flag-btn {
