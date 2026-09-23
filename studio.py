@@ -652,7 +652,7 @@ class Pipeline(threading.Thread):
                 self.set_status(clip, "saving")
                 cur_count += 1
                 number = cur_count
-                site_title = f"CRT Test {number:02d}"
+                site_title = site_name(cur_id, number)
                 real_fps = (clip.frame_count / clip.recording_duration_s
                             if clip.frame_count and clip.recording_duration_s else clip.capture_fps)
                 sb.insert_video({
@@ -701,6 +701,19 @@ class Pipeline(threading.Thread):
 # ===========================================================================
 #  Replacing one clip (runs off the UI thread)
 # ===========================================================================
+def site_name(collection_id: str, number: int) -> str:
+    """What participants see a clip called on the study site.
+
+    Clip numbers restart at 1 in every collection, so the number on its own is
+    not unique: "CRT Test 07" existed once per collection, and a participant
+    reporting that name could have meant any of them. Naming the collection too
+    makes the name point at exactly one clip - col1 #7 is "CRT 1-07", col2 #7
+    is "CRT 2-07". index.html builds the same string when a row has no title.
+    """
+    digits = "".join(ch for ch in str(collection_id or "") if ch.isdigit())
+    return f"CRT {digits or collection_id}-{number:02d}"
+
+
 def free_storage_name(original: str, taken: set[str]) -> str:
     """A name for a re-uploaded file that cannot collide with the old one.
 
@@ -776,7 +789,7 @@ class Replacer(threading.Thread):
         new_row = {
             "collection_id": self.row.get("collection_id"),
             "video_number": number,
-            "title": self.row.get("title") or f"CRT Test {number:02d}",
+            "title": self.row.get("title") or site_name(self.row.get("collection_id"), number),
             "storage_path": dest,
             "encoded_fps": round(frames / duration, 3),
             "frame_count": clip.frame_count or frames,
@@ -808,7 +821,7 @@ class Replacer(threading.Thread):
                 self.log(f"This project does not allow reusing clip numbers - "
                          f"the replacement went in as #{nxt}, not #{number}.", "warn")
                 new_row["video_number"] = nxt
-                new_row["title"] = f"CRT Test {nxt:02d}"
+                new_row["title"] = site_name(self.row.get("collection_id"), nxt)
                 sb.insert_video(new_row, upsert=False)
             else:
                 raise
@@ -1030,10 +1043,11 @@ class App(tk.Tk):
                 parts = ledger[clip.name].split("\t")
                 where = f"{parts[2]} #{parts[3]}" if len(parts) > 3 else "already published"
                 clip.status, clip.note = "skipped", where
-                # Recover the site name from the ledger, so a clip published in
-                # an earlier run still shows what participants call it.
+                # Recover the site name from the ledger (name, frames,
+                # collection, number, when), so a clip published in an earlier
+                # run still shows what participants call it.
                 if len(parts) > 3 and str(parts[3]).strip().isdigit():
-                    clip.site_title = f"CRT Test {int(parts[3]):02d}"
+                    clip.site_title = site_name(parts[2], int(parts[3]))
 
         for clip in self.clips:
             self.tree.insert("", "end", iid=clip.name, tags=(clip.status,), values=(
