@@ -1169,6 +1169,11 @@ kbd {
 }
 
 /* ---------- Phone ---------- */
+/* On phones, hide the helper instruction so the core action buttons remain visible above the browser UI. */
+@media (max-width: 640px) {
+  .control-panel .hint { display: none; }
+}
+
 @media (max-width: 520px) {
   .vid-stage, .vid-stage video { max-height: 40dvh; }
   /* Stack the clock above a FULL-WIDTH Mark button. Side by side, the button
