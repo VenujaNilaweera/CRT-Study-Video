@@ -125,3 +125,91 @@ grant execute on function public.crt_seen_videos(text) to anon, authenticated;
 --   select video_number, title, times_annotated
 --     from public.videos
 --    order by times_annotated asc, video_number asc;
+
+-- ===========================================================================
+-- 6. Participant identity
+-- ===========================================================================
+-- The display name/initials may be collected for study-team presentation,
+-- but annotations use this opaque backend UUID as their study identity.
+create extension if not exists pgcrypto;
+
+create table if not exists public.study_participants (
+  id uuid primary key default gen_random_uuid(),
+  participant_code text unique not null default ('P-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8))),
+  display_name text,
+  role text,
+  age_group text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.annotations
+  add column if not exists participant_id uuid;
+
+alter table public.annotations
+  drop constraint if exists annotations_participant_fk;
+
+alter table public.annotations
+  add constraint annotations_participant_fk
+  foreign key (participant_id)
+  references public.study_participants(id)
+  on delete set null;
+
+create index if not exists annotations_participant_id_idx
+  on public.annotations(participant_id);
+
+alter table public.study_participants enable row level security;
+
+drop policy if exists "anon can insert participant" on public.study_participants;
+create policy "anon can insert participant"
+  on public.study_participants
+  for insert
+  to anon
+  with check (true);
+
+-- The browser receives only the newly created participant row through this
+-- function. Direct table reads remain blocked for the public role.
+create or replace function public.crt_register_participant(
+  p_name text,
+  p_role text,
+  p_age text default null
+)
+returns table (participant_id uuid, participant_code text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_name is null or length(trim(p_name)) = 0 or length(p_name) > 60 then
+    raise exception 'A valid display name or initials are required';
+  end if;
+  if p_role is null or length(trim(p_role)) = 0 or length(p_role) > 40 then
+    raise exception 'A valid role is required';
+  end if;
+
+  return query
+  insert into public.study_participants(display_name, role, age_group)
+  values (trim(p_name), trim(p_role), nullif(trim(p_age), ''))
+  returning id, participant_code;
+end;
+$$;
+
+revoke all on function public.crt_register_participant(text, text, text) from public;
+grant execute on function public.crt_register_participant(text, text, text) to anon, authenticated;
+
+-- Replace the old name-based de-duplication helper with participant-ID lookup.
+drop function if exists public.crt_seen_videos(text);
+create or replace function public.crt_seen_videos(p_participant_id uuid)
+returns table (video_id uuid)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select distinct a.video_id
+    from public.annotations a
+   where a.video_id is not null
+     and a.participant_id = p_participant_id;
+$$;
+
+revoke all on function public.crt_seen_videos(uuid) from public;
+grant execute on function public.crt_seen_videos(uuid) to anon, authenticated;
