@@ -11,6 +11,13 @@ study site in one pass:
 Everything reports live progress, so a batch of 60 clips is one click instead
 of sixty manual uploads.
 
+PARTICIPANT ID NOTE
+-------------------
+This tool is the researcher/admin uploader only. It creates collections and
+video metadata; it does NOT create participant IDs or write participant
+annotations. Participant IDs are created by the study web app/backend, and
+annotations link to those IDs.
+
 WHAT IT NEEDS
 -------------
   * ffmpeg + ffprobe on PATH          (https://ffmpeg.org/download.html)
