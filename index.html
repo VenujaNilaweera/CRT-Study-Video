@@ -1762,7 +1762,7 @@ const SUPA_HEADERS = {
              <button class="btn ghost small" onclick="window.__act('remark')">${icon('retry', 15)} Re-mark</button>
            </div>
          </div>`
-      : `<div class="hint">Play the clip, then press <b>Mark</b> the moment the colour returns.</div>`;
+      : '';
     return body
       + (state.msg ? `<div class="ok">${esc(state.msg)}</div>` : '')
       + (state.err ? `<div class="err">${esc(state.err)}</div>` : '');
