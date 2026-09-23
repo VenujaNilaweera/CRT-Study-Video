@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=38">
+<link rel="stylesheet" href="styles.css?v=39">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -120,6 +120,8 @@ const SUPA_HEADERS = {
     obBroken: false,        // the demo can't play at all - fall back to a plain stepper
     obImmersiveTried: false,// fullscreen / orientation-lock attempted once per walkthrough open
     onboardReplay: false,   // true when the walkthrough was re-opened from the player ("How it works")
+    autoSkipStreak: 0,   // clips auto-skipped in a row (a run of these = an outage, not bad files)
+    everPlayedAClip: false, // has ANY clip loaded this session - guards against "All done" when nothing ever played
     drawerOpen: false,   // the ☰ side menu
     aboutReturn: null,   // the view to come back to when leaving the About page
     // Feedback form (About page)
@@ -414,15 +416,58 @@ const SUPA_HEADERS = {
     try { localStorage.setItem(FLAG_KEY, JSON.stringify([...state.flaggedClips].slice(-500))); }
     catch {}
   }
-  function reportBrokenClip(clip) {
+  function reportBrokenClip(clip, auto) {
     const who = state.user ? `${state.user.name} · ${state.user.status}` : '(not signed in)';
+    const how = auto
+      ? 'A clip failed to load and the site skipped it automatically.'
+      : 'A participant flagged a clip as not playing.';
     const message =
-      `A participant flagged a clip as not playing.\n\n` +
+      `${how}\n\n` +
       `Clip: ${clip.title || '(untitled)'}\n` +
       `Video id: ${clip.videoId || clip.id}\n` +
+      `File: ${clip.file || '(unknown)'}\n` +
       `Collection: ${clip.collectionName || '(none)'}\n` +
       `Reported by: ${who}`;
     return sendFeedback(message, '', 'CRT video issue');
+  }
+
+  /* A clip the browser cannot play (corrupt file, unreachable object) must not
+     strand the participant - least of all on clip 1, where it reads as "the
+     whole study is broken" and they leave. When that happens the site reports
+     which clip failed (so the team can fix it in Studio) and moves on by
+     itself, exactly as pressing Skip would.
+
+     A guard rail: if clips keep failing one after another, that is a dropped
+     connection, not a run of individually bad files, so after a few in a row
+     it stops rather than silently blowing through the whole set - and says the
+     clips are not loading, which is the honest message and offers a retry. */
+  const AUTO_SKIP_LIMIT = 4;
+  function autoSkipBrokenClip(clip) {
+    if (clip) {
+      const key = clipKey(clip);
+      if (key && !state.flaggedClips.has(key)) {
+        state.flaggedClips.add(key);
+        saveFlaggedClips();
+        // Best effort: the skip must happen whether or not the email sends.
+        try { reportBrokenClip(clip, true).catch(() => {}); } catch {}
+      }
+    }
+    state.autoSkipStreak = (state.autoSkipStreak || 0) + 1;
+    // Two ways this is an outage rather than a stray bad file:
+    //   - several clips fail back-to-back (a dropped connection mid-run), or
+    //   - we are about to run off the end of the queue having NEVER managed to
+    //     play a single clip. Landing on "All done - you've marked every clip"
+    //     when nothing ever loaded would be a flat lie.
+    const reachesEnd = state.qIndex + 1 >= state.queue.length;
+    if (state.autoSkipStreak >= AUTO_SKIP_LIMIT ||
+        (reachesEnd && !state.everPlayedAClip)) {
+      state.autoSkipStreak = 0;
+      state.libraryError = 'The clips are not loading. This is usually a '
+        + 'connection problem - please check your internet and try again.';
+      state.view = 'nolibrary';
+      return render();
+    }
+    return advanceQueue();
   }
 
   /* ---------- full-clip preload ----------
@@ -1916,6 +1961,11 @@ const SUPA_HEADERS = {
     setReady(false);
     const markReady = () => {
       if (!everReady) { everReady = true; applySpeed(); }
+      // A clip that plays clears the run of failures - the ones before it were
+      // individual bad files, not a dropped connection - and proves the
+      // library really does play, so a later "All done" is honest.
+      state.autoSkipStreak = 0;
+      state.everPlayedAClip = true;
       setReady(true);
     };
     vid.addEventListener('loadeddata', () => { if (vid.readyState >= 2) markReady(); });
@@ -1926,13 +1976,40 @@ const SUPA_HEADERS = {
     vid.addEventListener('waiting', () => { if (!everReady) setReady(false); });
     vid.addEventListener('play', updateClockNow);
     vid.addEventListener('pause', updateClockNow);
-    vid.addEventListener('error', () => {
+
+    // ---- a clip that will not load must never strand the participant ----
+    // Two ways in: the browser fires 'error' on a corrupt or missing file, or
+    // nothing ever arrives (readyState stays 0) within a grace window. Either
+    // way, report which clip it was and move on by itself - see
+    // autoSkipBrokenClip(). Guarded so it can only fire once per clip, and only
+    // while we are still ON this clip (a render swaps in a new <video>, and the
+    // old element's late timer must not skip the clip that replaced it).
+    let failed = false;
+    const failThisClip = () => {
+      if (failed) return;
+      if (document.getElementById('vid') !== vid) return;   // already moved on
+      failed = true;
       const overlay = document.getElementById('vidLoading');
-      if (overlay) overlay.innerHTML = 'Could not load this clip. Reload the page, or check the file.';
-    });
+      if (overlay) {
+        overlay.style.display = '';
+        overlay.innerHTML = 'This clip could not be played - skipping to the next one…';
+      }
+      // A brief beat so the message is seen, then advance.
+      setTimeout(() => { if (document.getElementById('vid') === vid) autoSkipBrokenClip(v0); }, 1400);
+    };
+    vid.addEventListener('error', failThisClip);
+    // No bytes at all after this long is a broken/unreachable file, not a slow
+    // one (a slow clip still reports metadata, readyState >= 1, well before
+    // now), so treat readyState 0 here as a failure. A clip that has metadata
+    // but is merely buffering is left alone to finish.
+    setTimeout(() => {
+      if (everReady || failed) return;
+      if (vid.readyState >= 1) return;   // metadata is in: slow, not broken
+      failThisClip();
+    }, 9000);
     // Safety net: never leave the overlay stuck if the browser is stingy with
     // 'canplaythrough' - once metadata is in, unlock after a short grace period.
-    setTimeout(() => { if (!everReady && vid.readyState >= 1) markReady(); }, 4000);
+    setTimeout(() => { if (!everReady && !failed && vid.readyState >= 1) markReady(); }, 4000);
     if (vid.readyState >= 2) markReady();
 
     // Keep the overlay glued to the picture as the layout changes. A
