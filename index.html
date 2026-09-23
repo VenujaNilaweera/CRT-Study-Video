@@ -643,6 +643,7 @@ const SUPA_HEADERS = {
           <span class="ob-eyebrow">${p.eyebrow}</span>
           <button class="ob-skip" onclick="window.__act('onboardskip')">Skip</button>
         </div>
+        ${state.user?.participantCode ? `<div class="ob-study-id"><span>Your Study ID</span><b>${esc(state.user.participantCode)}</b><small>Keep this code if you need to return to the study later.</small></div>` : ''}
         <div class="ob-illo-wrap">${onboardIllo(p.illo)}</div>
         <h2 class="ob-title">${p.title}</h2>
         <p class="ob-body">${p.body}</p>
