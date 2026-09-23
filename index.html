@@ -2511,7 +2511,12 @@ const SUPA_HEADERS = {
             id: c.id + '-' + v.video_number,
             videoId: v.id,                 // UUID FK for annotations
             videoNumber: v.video_number,   // stable position IN THE COLLECTION
-            title: v.title || ('CRT Test ' + String(v.video_number).padStart(2, '0')),
+            // Falls back to the same scheme studio.py's site_name() uses. Clip
+            // numbers restart at 1 in every collection, so the collection has
+            // to be part of the name - otherwise "CRT 07" names one clip per
+            // collection and a participant reporting it is ambiguous.
+            title: v.title || ('CRT ' + (String(c.id || '').replace(/\D/g, '') || c.id)
+                             + '-' + String(v.video_number).padStart(2, '0')),
             file: v.storage_path,
             url: BUCKET_PUBLIC_URL + v.storage_path.split('/').map(encodeURIComponent).join('/'),
             // fileFps: encoded rate of the .mp4 (used for frame stepping and for

@@ -71,6 +71,7 @@ Each file is self-contained, explains itself at the top, and is safe to run more
 | `supabase_balancing.sql` | Lets the app hand each participant the **least-annotated** clips first, via the `crt_seen_videos` RPC, without giving the public key read access to `annotations`. | The app falls back to a plain random order - it still works, just without active balancing. |
 | `supabase_returning_users.sql` | Powers the "welcome back" prompt: recognising a name that's signed in before and prefilling their role/age. Adds the `crt_lookup_participant` RPC. | The name field behaves like a normal first-time field - no prefill, no error either. |
 | `supabase_retire_clips.sql` | Lets a bad clip be taken off the site without losing its marks. Adds `videos.active` plus the `crt_clip_usage` view Studio reads mark counts from. | Studio's "Published clips" window can still list clips, but cannot take any down and cannot show mark counts. |
+| `supabase_clip_names.sql` | Renames existing clips so each name identifies one clip: `CRT 1-07`, `CRT 2-07`. Only needed once, for clips uploaded before this scheme. | Clips uploaded earlier keep titles like `CRT Test 07`, which repeat once per collection. New uploads get the new names either way. |
 
 The app is written to degrade gracefully if any of these haven't been run yet - it just quietly does the simpler thing instead of erroring.
 
@@ -84,7 +85,9 @@ Reload the site afterwards and the new clips just appear - nothing in `index.htm
 
 ### Taking a bad clip down, and replacing it
 
-When someone reports that a clip will not play, or the release flash landed on the wrong frame, open **Published clips...** in Studio. It lists every clip on the site with both names side by side - what participants call it (`CRT Test 07`) and which recording it came from - so a report naming "CRT Test 7" leads straight to the file. Type `7`, or part of the filename, in the **Find** box.
+When someone reports that a clip will not play, or the release flash landed on the wrong frame, open **Published clips...** in Studio. It lists every clip on the site with both names side by side - what participants call it (`CRT 1-07`) and which recording it came from - so a report naming a clip leads straight to the file. Type `7`, or part of the filename, in the **Find** box.
+
+Clip names identify exactly one clip. Numbering restarts inside each collection, so the collection is part of the name: collection 1's seventh clip is `CRT 1-07`, collection 2's is `CRT 2-07`. (The in-app **Flag** button also emails you the clip's collection and its uuid, so those reports are unambiguous regardless.)
 
 - **Take down** retires the clip: it stops being served immediately, and every mark already recorded against it is kept and stays analysable. Reversible with **Put back**.
 - **Replace file...** takes the corrected recording, retires the version that is live now, and uploads the new one under the *same clip number*, so the study's numbering does not shift under anyone.
@@ -267,6 +270,7 @@ CRT-Study-Video/
 ├── supabase_balancing.sql        # SQL migration - least-annotated-first serving
 ├── supabase_returning_users.sql  # SQL migration - "welcome back" name lookup
 ├── supabase_retire_clips.sql     # SQL migration - take a clip down without losing its marks
+├── supabase_clip_names.sql       # SQL migration - one clip per name (CRT 1-07, CRT 2-07)
 ├── make_walkthrough_images.py    # Build script for the onboarding cards' illustrations
 ├── assets/                       # Images + the onboarding demo video, served by the site
 ├── walkthrough_src/              # Source crops for make_walkthrough_images.py
