@@ -170,15 +170,44 @@ create policy "anon can insert participant"
 -- function. Direct table reads remain blocked for the public role.
 create or replace function public.crt_register_participant(
   p_name text,
-  p_role text,
-  p_age text default null
+  p_role text default null,
+  p_age text default null,
+  p_participant_code text default null
 )
-returns table (participant_id uuid, participant_code text)
+returns table (
+  participant_id uuid,
+  participant_code text,
+  display_name text,
+  role text,
+  age_group text
+)
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  existing public.study_participants%rowtype;
 begin
+  if p_participant_code is not null and length(trim(p_participant_code)) > 0 then
+    select *
+      into existing
+      from public.study_participants
+     where upper(participant_code) = upper(trim(p_participant_code))
+     limit 1;
+
+    if not found then
+      raise exception 'Study ID not found';
+    end if;
+
+    return query
+    select existing.id,
+           existing.participant_code,
+           existing.display_name,
+           existing.role,
+           existing.age_group;
+    return;
+  end if;
+
   if p_name is null or length(trim(p_name)) = 0 or length(p_name) > 60 then
     raise exception 'A valid display name or initials are required';
   end if;
@@ -189,12 +218,13 @@ begin
   return query
   insert into public.study_participants(display_name, role, age_group)
   values (trim(p_name), trim(p_role), nullif(trim(p_age), ''))
-  returning id, participant_code;
+  returning id, participant_code, display_name, role, age_group;
 end;
 $$;
 
-revoke all on function public.crt_register_participant(text, text, text) from public;
-grant execute on function public.crt_register_participant(text, text, text) to anon, authenticated;
+drop function if exists public.crt_register_participant(text, text, text);
+revoke all on function public.crt_register_participant(text, text, text, text) from public;
+grant execute on function public.crt_register_participant(text, text, text, text) to anon, authenticated;
 
 -- Replace the old name-based de-duplication helper with participant-ID lookup.
 drop function if exists public.crt_seen_videos(text);
