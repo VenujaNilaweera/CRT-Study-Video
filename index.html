@@ -251,16 +251,20 @@ const SUPA_HEADERS = {
   /* Everything this participant has already marked — the browser's own record
      merged with the server's. Local alone would forget on a new phone or a
      cleared cache and start showing old clips again. */
-  async function fetchSeen(name) {
+  async function fetchSeen(participantId, name) {
     const ids = new Set();
+    // Keep old local records working during the migration, but all new records
+    // are keyed by the backend participant ID.
     for (const a of annotations) {
-      if (a.name === name && a.videoId) ids.add(a.videoId);
+      if (participantId && a.participantId === participantId && a.videoId) ids.add(a.videoId);
+      else if (!a.participantId && a.name === name && a.videoId) ids.add(a.videoId);
     }
+    if (!participantId) return ids;
     try {
       const res = await fetch(`${REST_URL}/rpc/crt_seen_videos`, {
         method: 'POST',
         headers: SUPA_HEADERS,
-        body: JSON.stringify({ p_name: name })
+        body: JSON.stringify({ p_participant_id: participantId })
       });
       if (res.ok) {
         for (const row of await res.json()) {
@@ -268,13 +272,15 @@ const SUPA_HEADERS = {
           if (id) ids.add(id);
         }
       }
-    } catch { /* helper not installed, or offline — the local record stands */ }
+    } catch { /* backend helper unavailable/offline — local records still apply */ }
     return ids;
   }
 
   async function prepareQueue() {
     try { await discovery; } catch {}
-    const seen = state.user ? await fetchSeen(state.user.name) : new Set();
+    const seen = state.user
+      ? await fetchSeen(state.user.participantId, state.user.name)
+      : new Set();
     state.queue = buildQueue(seen);
     state.qIndex = 0;
     state.queueReady = true;
@@ -335,12 +341,43 @@ const SUPA_HEADERS = {
     return render();
   }
 
+  /* ---------- backend participant identity ----------
+     The participant can enter a display name/initials for the research team,
+     but annotations are never identified by that text. Supabase creates one
+     opaque participant UUID + short study code and the annotation rows use the
+     UUID. A refresh keeps the same ID through the saved session. */
+  async function registerParticipant(name, role, age) {
+    const response = await fetch(`${REST_URL}/rpc/crt_register_participant`, {
+      method: 'POST',
+      headers: SUPA_HEADERS,
+      body: JSON.stringify({
+        p_name: name,
+        p_role: role,
+        p_age: age || null
+      })
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || `Could not create the participant record (${response.status}).`);
+    }
+    const rows = await response.json();
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    if (!row || !row.participant_id) {
+      throw new Error('The study could not create a participant ID.');
+    }
+    return {
+      participantId: row.participant_id,
+      participantCode: row.participant_code || ''
+    };
+  }
+
   // Write one annotation row into the Supabase `annotations` table.
   // Keeps the same function name so the rest of the app (queue, retry,
   // offline resilience) is untouched.
   async function saveToExcel(payload) {
     // Map the app's payload onto the annotations table columns.
     const row = {
+      participant_id: payload.participantId || null,
       display_name: payload.name,
       role: payload.status,
       age_group: payload.age,
@@ -377,7 +414,7 @@ const SUPA_HEADERS = {
     let actions = `<button class="icon-btn square" title="Switch to ${dark ? 'light' : 'dark'} mode"
       aria-label="Switch to ${dark ? 'light' : 'dark'} mode" onclick="window.__act('theme')">${icon(dark ? 'sun' : 'moon')}</button>`;
     if (state.user) {
-      actions += `<span class="who">${esc(state.user.name)} · ${esc(state.user.status)}</span>`;
+      actions += `<span class="who">${esc(state.user.name)} · ${esc(state.user.status)}${state.user.participantCode ? ' · ' + esc(state.user.participantCode) : ''}</span>`;
       const pending = annotations.filter(a => a.synced === false).length;
       if (pending) actions += `<button class="sync-warn" title="${pending} mark(s) not yet saved — click to retry" onclick="window.__act('retrysync')">${icon('retry', 15)} ${pending} unsaved</button>`;
       actions += `<button onclick="window.__act('logout')">${icon('logout', 15)} Log out</button>`;
@@ -488,9 +525,9 @@ const SUPA_HEADERS = {
           <p class="muted">Watch short capillary-refill clips and press one button the moment you see the skin colour return.</p>
         </div>
         <div class="field">
-          <label for="f-name">Name or initials</label>
+          <label for="f-name">Display name or initials</label>
           <input id="f-name" placeholder="e.g. A.P. or Ann" autocomplete="off" maxlength="40">
-          <span class="field-hint">Part of your name or initials is enough — it only groups your responses.</span>
+          <span class="field-hint">Use the name/initials your study team expects — please do not enter your full legal name.</span>
         </div>
         <div class="field"><label for="f-status">Professional role</label>
           <select id="f-status"><option value="">Select…</option><option>Nurse</option><option>Doctor</option><option>Medical student</option><option>Paramedic</option><option>Researcher</option><option>Other</option></select></div>
@@ -513,7 +550,7 @@ const SUPA_HEADERS = {
           <p>Capillary refill is judged by eye — and trained clinicians disagree on where it ends. Your marks measure that variation against frame-accurate recordings.</p>
 
           <div class="about-note">
-            <b>No full names.</b> Initials are enough — they only group your own responses. No patient data is collected.
+            <b>No full legal names.</b> Use initials or the agreed study display name. A separate study ID is used for your results. No patient data is collected.
           </div>
 
           <p class="about-foot">About 5 minutes · Saves automatically</p>
@@ -1066,22 +1103,35 @@ const SUPA_HEADERS = {
     if (act === 'theme') return toggleTheme();
 
     if (act === 'login') {
+      if (state.saving) return;
       const name = document.getElementById('f-name').value.trim();
       const status = document.getElementById('f-status').value;
       const age = document.getElementById('f-age').value;
-      if (!name || !status) { state.err = 'Name and status are required.'; return render(); }
-      state.user = { name, status, age };
+      if (!name || !status) { state.err = 'Name/initials and role are required.'; return render(); }
+
+      // The display name is collected only for participant presentation/grouping.
+      // The backend creates the study identity used by every annotation.
+      state.saving = true;
+      state.err = '';
+      render();
+      try {
+        const identity = await registerParticipant(name, status, age);
+        state.user = { name, status, age, ...identity };
+      } catch (e) {
+        state.saving = false;
+        state.err = e.message || 'Could not create the participant record.';
+        return render();
+      }
+      state.saving = false;
+
       // A fresh order each sign-in, so two participants never march through
       // the clips in step. The queue itself is assembled below.
       state.orderSeed = newOrderSeed();
       state.queueReady = false;
-      // Walk through the explainer while the queue is being put together;
-      // otherwise hold on a brief "preparing" card.
       if (hasOnboarded(name)) { state.view = 'loading'; }
       else { state.view = 'onboarding'; state.onboardPage = 0; }
       render();
       await prepareQueue();
-      // Don't yank someone out of the walkthrough just because the queue landed.
       if (state.view === 'loading') state.view = currentClip() ? 'player' : 'finished';
       return render();
     }
@@ -1161,6 +1211,7 @@ const SUPA_HEADERS = {
       const rawTime = Number(state.marked.toFixed(3));           // file position (s) of the mark
       const markedFrame = frameInFile(v, state.marked);           // recording frame at the mark
       const payload = {
+        participantId: state.user.participantId,
         name: state.user.name,
         status: state.user.status,
         age: state.user.age,
