@@ -121,6 +121,7 @@ const SUPA_HEADERS = {
     obImmersiveTried: false,// fullscreen / orientation-lock attempted once per walkthrough open
     onboardReplay: false,   // true when the walkthrough was re-opened from the player ("How it works")
     autoSkipStreak: 0,   // clips auto-skipped in a row (a run of these = an outage, not bad files)
+    everPlayedAClip: false, // has ANY clip loaded this session - guards against "All done" when nothing ever played
     drawerOpen: false,   // the ☰ side menu
     aboutReturn: null,   // the view to come back to when leaving the About page
     // Feedback form (About page)
@@ -452,7 +453,14 @@ const SUPA_HEADERS = {
       }
     }
     state.autoSkipStreak = (state.autoSkipStreak || 0) + 1;
-    if (state.autoSkipStreak >= AUTO_SKIP_LIMIT) {
+    // Two ways this is an outage rather than a stray bad file:
+    //   - several clips fail back-to-back (a dropped connection mid-run), or
+    //   - we are about to run off the end of the queue having NEVER managed to
+    //     play a single clip. Landing on "All done - you've marked every clip"
+    //     when nothing ever loaded would be a flat lie.
+    const reachesEnd = state.qIndex + 1 >= state.queue.length;
+    if (state.autoSkipStreak >= AUTO_SKIP_LIMIT ||
+        (reachesEnd && !state.everPlayedAClip)) {
       state.autoSkipStreak = 0;
       state.libraryError = 'The clips are not loading. This is usually a '
         + 'connection problem - please check your internet and try again.';
@@ -1954,8 +1962,10 @@ const SUPA_HEADERS = {
     const markReady = () => {
       if (!everReady) { everReady = true; applySpeed(); }
       // A clip that plays clears the run of failures - the ones before it were
-      // individual bad files, not a dropped connection.
+      // individual bad files, not a dropped connection - and proves the
+      // library really does play, so a later "All done" is honest.
       state.autoSkipStreak = 0;
+      state.everPlayedAClip = true;
       setReady(true);
     };
     vid.addEventListener('loadeddata', () => { if (vid.readyState >= 2) markReady(); });
