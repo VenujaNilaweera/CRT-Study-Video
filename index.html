@@ -143,7 +143,7 @@ const SUPA_HEADERS = {
   function restoreSession() {
     try {
       const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-      if (s && s.user && s.user.name) {
+      if (s && s.user && s.user.name && s.user.participantId) {
         state.user = s.user;
         // Hold on the "preparing" card until the rebuilt queue arrives.
         state.view = 'loading';
@@ -155,6 +155,10 @@ const SUPA_HEADERS = {
         // A restored session skips the login screen, so the sign-in check
         // never runs for it — repeat the same per-name test here.
         if (!hasOnboarded(state.user.name)) { state.view = 'onboarding'; state.onboardPage = 0; }
+      } else if (s && s.user && s.user.name && !s.user.participantId) {
+        // Legacy name-only sessions are not resumed: study records now require
+        // the backend participant ID.
+        localStorage.removeItem(SESSION_KEY);
       }
     } catch {}
   }
@@ -346,14 +350,15 @@ const SUPA_HEADERS = {
      but annotations are never identified by that text. Supabase creates one
      opaque participant UUID + short study code and the annotation rows use the
      UUID. A refresh keeps the same ID through the saved session. */
-  async function registerParticipant(name, role, age) {
+  async function registerParticipant(name, role, age, participantCode) {
     const response = await fetch(`${REST_URL}/rpc/crt_register_participant`, {
       method: 'POST',
       headers: SUPA_HEADERS,
       body: JSON.stringify({
         p_name: name,
         p_role: role,
-        p_age: age || null
+        p_age: age || null,
+        p_participant_code: participantCode || null
       })
     });
     if (!response.ok) {
@@ -367,7 +372,10 @@ const SUPA_HEADERS = {
     }
     return {
       participantId: row.participant_id,
-      participantCode: row.participant_code || ''
+      participantCode: row.participant_code || '',
+      name: row.display_name || name,
+      status: row.role || role,
+      age: row.age_group || age || ''
     };
   }
 
@@ -529,6 +537,11 @@ const SUPA_HEADERS = {
           <input id="f-name" placeholder="e.g. A.P. or Ann" autocomplete="off" maxlength="40">
           <span class="field-hint">Use the name/initials your study team expects — please do not enter your full legal name.</span>
         </div>
+        <div class="field">
+          <label for="f-code">Study ID <span class="muted">(returning participant)</span></label>
+          <input id="f-code" placeholder="e.g. P-7F31A2C9" autocomplete="off" maxlength="10" autocapitalize="characters" spellcheck="false">
+          <span class="field-hint">Leave blank for a new participant. If you return later, enter the Study ID you were given.</span>
+        </div>
         <div class="field"><label for="f-status">Professional role</label>
           <select id="f-status"><option value="">Select…</option><option>Nurse</option><option>Doctor</option><option>Medical student</option><option>Paramedic</option><option>Researcher</option><option>Other</option></select></div>
         <div class="field"><label for="f-age">Age group</label>
@@ -550,7 +563,7 @@ const SUPA_HEADERS = {
           <p>Capillary refill is judged by eye — and trained clinicians disagree on where it ends. Your marks measure that variation against frame-accurate recordings.</p>
 
           <div class="about-note">
-            <b>No full legal names.</b> Use initials or the agreed study display name. A separate study ID is used for your results. No patient data is collected.
+            <b>No full legal names.</b> Use initials or the agreed study display name. Your results use a separate Study ID, which you can use to return later. No patient data is collected.
           </div>
 
           <p class="about-foot">About 5 minutes · Saves automatically</p>
@@ -1107,7 +1120,12 @@ const SUPA_HEADERS = {
       const name = document.getElementById('f-name').value.trim();
       const status = document.getElementById('f-status').value;
       const age = document.getElementById('f-age').value;
-      if (!name || !status) { state.err = 'Name/initials and role are required.'; return render(); }
+      const participantCode = document.getElementById('f-code').value.trim().toUpperCase();
+      if (!name) { state.err = 'Name/initials are required.'; return render(); }
+      if (!participantCode && !status) {
+        state.err = 'Select your professional role for a new participant.';
+        return render();
+      }
 
       // The display name is collected only for participant presentation/grouping.
       // The backend creates the study identity used by every annotation.
@@ -1115,8 +1133,15 @@ const SUPA_HEADERS = {
       state.err = '';
       render();
       try {
-        const identity = await registerParticipant(name, status, age);
-        state.user = { name, status, age, ...identity };
+        const identity = await registerParticipant(name, status, age, participantCode);
+        // For returning participants, the backend's stored identity fields win.
+        state.user = {
+          name: identity.name,
+          status: identity.status,
+          age: identity.age,
+          participantId: identity.participantId,
+          participantCode: identity.participantCode
+        };
       } catch (e) {
         state.saving = false;
         state.err = e.message || 'Could not create the participant record.';
