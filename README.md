@@ -70,6 +70,7 @@ Each file is self-contained, explains itself at the top, and is safe to run more
 | `supabase_hardening.sql` | Locks down the `annotations` table so the public key can only insert well-formed rows - nothing malformed, nothing read back. | Recommended for any project taking public submissions. |
 | `supabase_balancing.sql` | Lets the app hand each participant the **least-annotated** clips first, via the `crt_seen_videos` RPC, without giving the public key read access to `annotations`. | The app falls back to a plain random order - it still works, just without active balancing. |
 | `supabase_returning_users.sql` | Powers the "welcome back" prompt: recognising a name that's signed in before and prefilling their role/age. Adds the `crt_lookup_participant` RPC. | The name field behaves like a normal first-time field - no prefill, no error either. |
+| `supabase_retire_clips.sql` | Lets a bad clip be taken off the site without losing its marks. Adds `videos.active` plus the `crt_clip_usage` view Studio reads mark counts from. | Studio's "Published clips" window can still list clips, but cannot take any down and cannot show mark counts. |
 
 The app is written to degrade gracefully if any of these haven't been run yet - it just quietly does the simpler thing instead of erroring.
 
@@ -80,6 +81,27 @@ The app is written to degrade gracefully if any of these haven't been run yet - 
 Clips are added with **`studio.py`**, a desktop tool (`python studio.py`) that takes a folder of raw recordings all the way to the live study site in one pass: add the release-flash overlay → re-encode for the browser → upload to Supabase Storage → create the database rows → group the clips into collections. Read the docstring at the top of the file for the full pipeline and what it needs (ffmpeg/ffprobe on PATH, `pip install opencv-python requests`, and a Supabase **service role** key pasted into Settings once - never the public key, and never committed; it's saved to `studio_config.json`, which is git-ignored).
 
 Reload the site afterwards and the new clips just appear - nothing in `index.html` needs editing.
+
+### Taking a bad clip down, and replacing it
+
+When someone reports that a clip will not play, or the release flash landed on the wrong frame, open **Published clips...** in Studio. It lists every clip on the site with both names side by side - what participants call it (`CRT Test 07`) and which recording it came from - so a report naming "CRT Test 7" leads straight to the file. Type `7`, or part of the filename, in the **Find** box.
+
+- **Take down** retires the clip: it stops being served immediately, and every mark already recorded against it is kept and stays analysable. Reversible with **Put back**.
+- **Replace file...** takes the corrected recording, retires the version that is live now, and uploads the new one under the *same clip number*, so the study's numbering does not shift under anyone.
+- **Delete permanently** is offered only for a clip that nothing has marked yet.
+
+**Never delete a clip row by hand in the Supabase dashboard.** `supabase_hardening.sql` declares
+
+```sql
+FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+```
+
+so deleting one video row silently deletes every mark anyone ever recorded against it, with no warning and no way back. Retiring is there precisely so you never have to.
+
+Two details worth knowing, both deliberate:
+
+- A replacement is a **new row with a new storage filename**, not an edit of the old one. Uploads use `x-upsert`, so re-using the filename would overwrite the original file - and the retired row would then point at the new footage, quietly attaching the bad clip's marks to the good clip's video. Keeping them separate means marks made on the broken version stay with the broken version, where they belong, instead of being merged into the corrected one's results.
+- Retiring never disturbs anything already recorded. Annotations reference `videos.id` (a uuid), never `video_number`, so a mark can never be re-attributed to a different clip by anything that happens to the numbering.
 
 ### Frame rate overrides
 
@@ -244,6 +266,7 @@ CRT-Study-Video/
 ├── supabase_hardening.sql        # SQL migration - lock down annotation inserts
 ├── supabase_balancing.sql        # SQL migration - least-annotated-first serving
 ├── supabase_returning_users.sql  # SQL migration - "welcome back" name lookup
+├── supabase_retire_clips.sql     # SQL migration - take a clip down without losing its marks
 ├── make_walkthrough_images.py    # Build script for the onboarding cards' illustrations
 ├── assets/                       # Images + the onboarding demo video, served by the site
 ├── walkthrough_src/              # Source crops for make_walkthrough_images.py

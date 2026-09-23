@@ -45,7 +45,7 @@ import threading
 import tkinter as tk
 from dataclasses import dataclass, field
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import requests
 
@@ -113,6 +113,10 @@ class Clip:
     note: str = ""
     collection_id: str = ""
     video_number: int = 0
+    # What this recording is CALLED on the study site ("CRT Test 07"). A
+    # participant reporting a problem quotes that name, never the source
+    # filename, so the two have to be visible side by side here.
+    site_title: str = ""
 
     @property
     def name(self) -> str:
@@ -401,15 +405,102 @@ class Supabase:
         if not r.ok:
             raise RuntimeError(f"storage upload failed ({r.status_code}): {r.text[:200]}")
 
-    def insert_video(self, row: dict) -> None:
+    def insert_video(self, row: dict, upsert: bool = True) -> dict:
+        # upsert=False for a replacement. merge-duplicates would quietly UPDATE
+        # a conflicting row instead of failing, and the row it would land on is
+        # the retired one we just took down - rewriting its storage_path to the
+        # new file and handing the bad clip's marks the good clip's footage.
+        prefer = ("resolution=merge-duplicates,return=representation" if upsert
+                  else "return=representation")
         r = requests.post(
             f"{self.rest}/videos",
             headers={**self.headers, "Content-Type": "application/json",
-                     "Prefer": "resolution=merge-duplicates,return=minimal"},
+                     "Prefer": prefer},
             json=row, timeout=60,
         )
         if not r.ok:
             raise RuntimeError(f"row insert failed ({r.status_code}): {r.text[:200]}")
+        try:
+            body = r.json()
+            return body[0] if isinstance(body, list) and body else (body or {})
+        except Exception:
+            return {}
+
+    # ---------------- library management ----------------
+    # Everything below exists so a clip that turns out to be wrong can be taken
+    # off the site. See supabase_retire_clips.sql for WHY none of it deletes.
+
+    def library(self) -> list[dict]:
+        """Every published clip, with how many marks it carries.
+
+        Prefers the crt_clip_usage view (which joins the mark counts). If that
+        view is missing - the migration has not been run - fall back to the
+        plain videos table so the window still opens and can still tell you
+        what is there; it just cannot show mark counts, so it treats every clip
+        as if it had marks, which is the cautious way round.
+        """
+        r = requests.get(
+            f"{self.rest}/crt_clip_usage?select=*&order=collection_id,video_number",
+            headers=self.headers, timeout=30)
+        if r.ok:
+            rows = r.json()
+            for row in rows:
+                row["marks_known"] = True
+            return rows
+
+        r = requests.get(
+            f"{self.rest}/videos?select=*&order=collection_id,video_number",
+            headers=self.headers, timeout=30)
+        r.raise_for_status()
+        rows = r.json()
+        for row in rows:
+            row["marks"] = None            # unknown, not zero
+            row["marks_known"] = False
+        return rows
+
+    def set_active(self, video_id: str, active: bool, reason: str = "") -> None:
+        payload: dict = {"active": active}
+        if not active and reason:
+            payload["retired_reason"] = reason[:300]
+        r = requests.patch(
+            f"{self.rest}/videos?id=eq.{video_id}",
+            headers={**self.headers, "Content-Type": "application/json",
+                     "Prefer": "return=minimal"},
+            json=payload, timeout=30)
+        if r.status_code in (400, 404) and "active" in r.text:
+            raise RuntimeError(
+                "this project has no 'active' column yet - run "
+                "supabase_retire_clips.sql in the Supabase SQL editor first")
+        if not r.ok:
+            raise RuntimeError(f"could not update the clip ({r.status_code}): {r.text[:200]}")
+
+    def delete_video(self, video_id: str) -> None:
+        """Only ever called for a clip with zero marks - see the caller.
+
+        annotations.video_id cascades on delete, so calling this on a clip that
+        HAS marks destroys them with no warning and no way back.
+        """
+        r = requests.delete(f"{self.rest}/videos?id=eq.{video_id}",
+                            headers={**self.headers, "Prefer": "return=minimal"},
+                            timeout=30)
+        if not r.ok:
+            raise RuntimeError(f"delete failed ({r.status_code}): {r.text[:200]}")
+
+    def remove_file(self, dest_name: str) -> None:
+        requests.delete(f"{self.storage}/object/{STORAGE_BUCKET}/{dest_name}",
+                        headers=self.headers, timeout=60)
+
+    def storage_names(self) -> set[str]:
+        """Filenames already in the bucket, so a replacement can pick a free one."""
+        r = requests.post(f"{self.storage}/object/list/{STORAGE_BUCKET}",
+                          headers={**self.headers, "Content-Type": "application/json"},
+                          json={"prefix": "", "limit": 10000}, timeout=60)
+        if not r.ok:
+            return set()
+        try:
+            return {row["name"] for row in r.json() if row.get("name")}
+        except Exception:
+            return set()
 
 
 # ===========================================================================
@@ -561,12 +652,13 @@ class Pipeline(threading.Thread):
                 self.set_status(clip, "saving")
                 cur_count += 1
                 number = cur_count
+                site_title = f"CRT Test {number:02d}"
                 real_fps = (clip.frame_count / clip.recording_duration_s
                             if clip.frame_count and clip.recording_duration_s else clip.capture_fps)
                 sb.insert_video({
                     "collection_id": cur_id,
                     "video_number": number,
-                    "title": f"CRT Test {number:02d}",
+                    "title": site_title,
                     "storage_path": clip.video.name,
                     "encoded_fps": round(frames / duration, 3),
                     "frame_count": clip.frame_count or frames,
@@ -584,8 +676,12 @@ class Pipeline(threading.Thread):
                 append_ledger(work, clip.video.name, frames, cur_id, number)
 
                 clip.collection_id, clip.video_number = cur_id, number
+                clip.site_title = site_title
                 self.set_status(clip, "done", f"{cur_id} #{number}")
-                self.log(f"  {clip.name} -> {cur_id} #{number} ({frames} frames)", "good")
+                # Log both names together: this line is what you search when a
+                # participant reports "CRT Test 07 will not play".
+                self.log(f"  {clip.name} -> {site_title}  ({cur_id} #{number}, "
+                         f"{frames} frames)", "good")
                 done += 1
             except Exception as exc:
                 self.set_status(clip, "failed", str(exc)[:120])
@@ -603,6 +699,127 @@ class Pipeline(threading.Thread):
 
 
 # ===========================================================================
+#  Replacing one clip (runs off the UI thread)
+# ===========================================================================
+def free_storage_name(original: str, taken: set[str]) -> str:
+    """A name for a re-uploaded file that cannot collide with the old one.
+
+    Uploads are sent with x-upsert, so writing a corrected file under the name
+    the bad one already uses would OVERWRITE it - and the retired row would
+    then point at the new content, quietly attaching the bad clip's marks to
+    the good clip's footage. A fresh name keeps the two apart for good.
+    """
+    stem, dot, ext = original.rpartition(".")
+    if not dot:
+        stem, ext = original, "mp4"
+    n = 2
+    while f"{stem}__r{n}.{ext}" in taken:
+        n += 1
+    return f"{stem}__r{n}.{ext}"
+
+
+class Replacer(threading.Thread):
+    """Swap a corrected recording in for a clip already on the site.
+
+    The old row is never edited and never deleted: it is retired, keeping its
+    marks. The corrected file goes up as a NEW row under a NEW storage name,
+    inheriting the retired clip's collection and number so the study's clip
+    numbering does not shift underneath anyone.
+    """
+
+    def __init__(self, row: dict, clip: "Clip", settings: Settings,
+                 reason: str, events: queue.Queue):
+        super().__init__(daemon=True)
+        self.row, self.clip, self.s, self.reason, self.q = row, clip, settings, reason, events
+
+    def log(self, msg: str, tone: str = "info"):
+        self.q.put({"kind": "log", "msg": msg, "tone": tone})
+
+    def run(self):
+        try:
+            self._run()
+        except Exception as exc:
+            self.log(f"Replace failed: {exc}", "error")
+            self.q.put({"kind": "replaced", "ok": False})
+
+    def _run(self):
+        sb = Supabase(self.s.service_key)
+        ok, msg = sb.check()
+        if not ok:
+            raise RuntimeError(msg)
+
+        work = Path(self.s.work_dir or DEFAULT_WORK)
+        work.mkdir(parents=True, exist_ok=True)
+        clip = self.clip
+
+        self.log(f"Encoding {clip.name} ...")
+        out = work / clip.video.name
+        if self.s.add_flash and clip.stamped_frame is not None:
+            write_flashed(clip.video, out, clip.stamped_frame)
+        else:
+            encode_web(clip.video, out)
+
+        frames, duration = probe(out)
+        if not frames or not duration:
+            raise RuntimeError("could not probe the encoded file")
+
+        # A different object name every time, so the retired row keeps pointing
+        # at the footage its marks were actually made against.
+        taken = sb.storage_names() | sb.existing_paths()
+        dest = free_storage_name(self.row.get("storage_path") or clip.video.name, taken)
+        self.log(f"Uploading as {dest} ...")
+        sb.upload_file(out, dest)
+
+        number = self.row.get("video_number")
+        real_fps = (clip.frame_count / clip.recording_duration_s
+                    if clip.frame_count and clip.recording_duration_s else clip.capture_fps)
+        new_row = {
+            "collection_id": self.row.get("collection_id"),
+            "video_number": number,
+            "title": self.row.get("title") or f"CRT Test {number:02d}",
+            "storage_path": dest,
+            "encoded_fps": round(frames / duration, 3),
+            "frame_count": clip.frame_count or frames,
+            "stamped": clip.stamped_frame is not None,
+            "stamped_frame": clip.stamped_frame,
+            "recording_duration_s": clip.recording_duration_s,
+            "capture_fps": round(real_fps, 3) if real_fps else None,
+            "stamp_time_s": clip.stamp_time_s,
+            "trigger_source": clip.trigger_source,
+            "post_stamp_tail_s": clip.post_stamp_tail_s,
+        }
+
+        # Retire FIRST. If the insert then fails, the site is simply short one
+        # clip - annoying but harmless. The other order could leave two live
+        # rows on the same number, which the queue would serve as two clips.
+        self.log("Retiring the old version ...")
+        sb.set_active(self.row["id"], False, self.reason or "replaced with a corrected upload")
+
+        try:
+            sb.insert_video(new_row, upsert=False)
+        except RuntimeError as exc:
+            # Some schemas put a unique index on (collection_id, video_number).
+            # Reuse is then impossible, so fall back to a fresh number rather
+            # than leaving the clip missing, and say so plainly.
+            if "23505" in str(exc) or "duplicate" in str(exc).lower():
+                same = [r.get("video_number") or 0 for r in sb.library()
+                        if r.get("collection_id") == self.row.get("collection_id")]
+                nxt = 1 + max(same or [0])
+                self.log(f"This project does not allow reusing clip numbers - "
+                         f"the replacement went in as #{nxt}, not #{number}.", "warn")
+                new_row["video_number"] = nxt
+                new_row["title"] = f"CRT Test {nxt:02d}"
+                sb.insert_video(new_row, upsert=False)
+            else:
+                raise
+
+        self.log(f"Replaced clip #{number}. The old version keeps its marks and "
+                 f"stays in the table, retired.", "good")
+        self.log("Hard-refresh the study site to see the new file.", "good")
+        self.q.put({"kind": "replaced", "ok": True})
+
+
+# ===========================================================================
 #  GUI
 # ===========================================================================
 class App(tk.Tk):
@@ -617,6 +834,7 @@ class App(tk.Tk):
         self.clips: list[Clip] = []
         self.events: queue.Queue = queue.Queue()
         self.pipeline: Pipeline | None = None
+        self.library_win: "LibraryWindow | None" = None
 
         self._build_style()
         self._build_ui()
@@ -684,12 +902,15 @@ class App(tk.Tk):
         # ---- clip table ----
         left = ttk.Frame(body, style="Card.TFrame", padding=1)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
-        cols = ("name", "frames", "release", "status", "note")
+        cols = ("name", "site", "frames", "release", "status", "note")
         self.tree = ttk.Treeview(left, columns=cols, show="headings", selectmode="none")
         for cid, label, w, anchor in (
-            ("name", "Clip", 250, "w"), ("frames", "Frames", 70, "center"),
+            ("name", "Clip", 230, "w"),
+            # Filled in once the row is saved: what participants see it called.
+            ("site", "Site name", 110, "w"),
+            ("frames", "Frames", 70, "center"),
             ("release", "Release", 70, "center"), ("status", "Status", 90, "w"),
-            ("note", "Detail", 220, "w"),
+            ("note", "Detail", 170, "w"),
         ):
             self.tree.heading(cid, text=label)
             self.tree.column(cid, width=w, anchor=anchor,
@@ -745,6 +966,11 @@ class App(tk.Tk):
         self.go_btn = self._btn(side, "Process & Upload", self.start)
         self.go_btn.pack(fill="x")
         self.cancel_btn = self._btn(side, "Cancel", self.stop, "danger")
+
+        # Everything already on the site: what each clip is called there, which
+        # file it came from, and how to take a bad one down or swap it out.
+        self._btn(side, "Published clips...", self.open_library, "ghost").pack(
+            fill="x", pady=(8, 0))
 
         # ---- progress + log ----
         foot = ttk.Frame(self, padding=(18, 0, 18, 16))
@@ -804,10 +1030,15 @@ class App(tk.Tk):
                 parts = ledger[clip.name].split("\t")
                 where = f"{parts[2]} #{parts[3]}" if len(parts) > 3 else "already published"
                 clip.status, clip.note = "skipped", where
+                # Recover the site name from the ledger, so a clip published in
+                # an earlier run still shows what participants call it.
+                if len(parts) > 3 and str(parts[3]).strip().isdigit():
+                    clip.site_title = f"CRT Test {int(parts[3]):02d}"
 
         for clip in self.clips:
             self.tree.insert("", "end", iid=clip.name, tags=(clip.status,), values=(
                 clip.name,
+                clip.site_title or "-",
                 clip.frame_count or "-",
                 clip.stamped_frame if clip.stamped_frame is not None else "-",
                 clip.status, clip.note,
@@ -865,6 +1096,7 @@ class App(tk.Tk):
         if self.tree.exists(clip.name):
             self.tree.item(clip.name, tags=(clip.status,), values=(
                 clip.name,
+                clip.site_title or "-",
                 clip.frame_count or "-",
                 clip.stamped_frame if clip.stamped_frame is not None else "-",
                 clip.status, clip.note,
@@ -893,9 +1125,291 @@ class App(tk.Tk):
                     self.go_btn.pack(fill="x")
                     self.progress_lbl.configure(
                         text="Done" if ev.get("ok") else "Finished with errors")
+                elif kind == "replaced":
+                    if self.library_win and self.library_win.winfo_exists():
+                        self.library_win.refresh()
         except queue.Empty:
             pass
         self.after(80, self._drain)
+
+    # ---------- library ----------
+    def open_library(self):
+        if self.library_win and self.library_win.winfo_exists():
+            self.library_win.lift()
+            self.library_win.focus_force()
+            return
+        if not self.key_var.get().strip():
+            messagebox.showwarning(
+                "Service key needed",
+                "Paste the Supabase service_role key first - managing published "
+                "clips needs write access.")
+            return
+        self.settings = self.gather()
+        self.settings.save()
+        self.library_win = LibraryWindow(self)
+
+
+# ===========================================================================
+#  Library window - take a clip down, put one back, or swap in a fixed file
+# ===========================================================================
+class LibraryWindow(tk.Toplevel):
+    def __init__(self, app: "App"):
+        super().__init__(app)
+        self.app = app
+        self.rows: list[dict] = []
+        self.title("Published clips")
+        self.configure(bg=BG)
+        self.geometry("1020x560")
+        self.minsize(820, 420)
+        self._build()
+        self.refresh()
+
+    # ---------- layout ----------
+    def _build(self):
+        head = ttk.Frame(self, padding=(16, 14, 16, 6))
+        head.pack(fill="x")
+        ttk.Label(head, text="Published clips", style="H1.TLabel").pack(side="left")
+        self.count_lbl = ttk.Label(head, text="", style="Dim.TLabel")
+        self.count_lbl.pack(side="left", padx=(10, 0))
+
+        note = ttk.Frame(self, padding=(16, 0, 16, 8))
+        note.pack(fill="x")
+        ttk.Label(
+            note,
+            text="Retiring takes a clip off the site and keeps every mark recorded "
+                 "against it. Deleting would destroy those marks, so it is offered "
+                 "only for a clip nothing has marked yet.",
+            style="Dim.TLabel", wraplength=960, justify="left").pack(anchor="w")
+
+        # A report names the clip the way the SITE does ("CRT Test 07"), so the
+        # first thing this window has to do is turn that into a row.
+        find = ttk.Frame(self, padding=(16, 0, 16, 8))
+        find.pack(fill="x")
+        ttk.Label(find, text="Find:", style="Dim.TLabel").pack(side="left")
+        self.query = tk.StringVar()
+        ent = ttk.Entry(find, textvariable=self.query, width=34)
+        ent.pack(side="left", padx=(8, 8))
+        self.query.trace_add("write", lambda *_a: self._fill())
+        ttk.Label(find, text="clip number, site name or file - e.g. \"CRT Test 07\" or just 7",
+                  style="Dim.TLabel").pack(side="left")
+
+        wrap = ttk.Frame(self, style="Card.TFrame", padding=1)
+        wrap.pack(fill="both", expand=True, padx=16)
+        cols = ("num", "coll", "title", "file", "marks", "state")
+        self.tree = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="browse")
+        for cid, label, w, anchor in (
+            ("num", "#", 50, "center"), ("coll", "Collection", 110, "w"),
+            ("title", "Title", 190, "w"), ("file", "File", 300, "w"),
+            ("marks", "Marks", 70, "center"), ("state", "State", 110, "w"),
+        ):
+            self.tree.heading(cid, text=label)
+            self.tree.column(cid, width=w, anchor=anchor,
+                             stretch=(cid in ("title", "file")))
+        vsb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=vsb.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+        self.tree.tag_configure("live", foreground=INK)
+        self.tree.tag_configure("retired", foreground=INK_DIM)
+        self.tree.bind("<<TreeviewSelect>>", lambda _e: self._sync_buttons())
+
+        bar = ttk.Frame(self, padding=(16, 10, 16, 14))
+        bar.pack(fill="x")
+        self.app._btn(bar, "Refresh", self.refresh, "ghost").pack(side="left")
+        self.retire_btn = self.app._btn(bar, "Take down", self.retire, "danger")
+        self.retire_btn.pack(side="left", padx=6)
+        self.restore_btn = self.app._btn(bar, "Put back", self.restore, "ghost")
+        self.restore_btn.pack(side="left", padx=6)
+        self.replace_btn = self.app._btn(bar, "Replace file...", self.replace, "primary")
+        self.replace_btn.pack(side="left", padx=6)
+        self.delete_btn = self.app._btn(bar, "Delete permanently", self.delete, "danger")
+        self.delete_btn.pack(side="left", padx=6)
+        self.status = ttk.Label(bar, text="", style="Dim.TLabel")
+        self.status.pack(side="right")
+
+    # ---------- data ----------
+    def _sb(self) -> Supabase:
+        return Supabase(self.app.key_var.get().strip())
+
+    def refresh(self):
+        self.status.configure(text="Loading...")
+        self.update_idletasks()
+        try:
+            self.rows = self._sb().library()
+        except Exception as exc:
+            self.status.configure(text="")
+            messagebox.showerror("Could not load", str(exc), parent=self)
+            return
+        self._fill()
+        live = sum(1 for r in self.rows if r.get("active") is not False)
+        retired = len(self.rows) - live
+        self.count_lbl.configure(
+            text=f"{live} live, {retired} retired"
+                 + ("" if self.rows and self.rows[0].get("marks_known", True)
+                    else "   (mark counts need supabase_retire_clips.sql)"))
+        self.status.configure(text="")
+
+    def _matches(self, row: dict, q: str) -> bool:
+        if not q:
+            return True
+        num = str(row.get("video_number", ""))
+        # A bare number means the CLIP number and nothing else. Falling back to
+        # a substring search would make "8" also match every clip whose
+        # filename happens to contain an 8 - which, with date-stamped names
+        # like 2026-08-16_..., is most of them.
+        if q.isdigit():
+            return q.lstrip("0") == num.lstrip("0")
+        hay = " ".join(str(row.get(k) or "") for k in
+                       ("video_number", "title", "storage_path", "collection_id")).lower()
+        return q in hay
+
+    def _fill(self):
+        q = self.query.get().strip().lower()
+        self.tree.delete(*self.tree.get_children())
+        for row in self.rows:
+            if not self._matches(row, q):
+                continue
+            active = row.get("active") is not False
+            marks = row.get("marks")
+            self.tree.insert(
+                "", "end", iid=row["id"], tags=("live" if active else "retired",),
+                values=(
+                    row.get("video_number", "-"),
+                    row.get("collection_id", "-"),
+                    row.get("title", "-"),
+                    row.get("storage_path", "-"),
+                    "?" if marks is None else marks,
+                    "live" if active else "retired",
+                ))
+        self._sync_buttons()
+
+    def _selected(self) -> dict | None:
+        sel = self.tree.selection()
+        if not sel:
+            return None
+        return next((r for r in self.rows if r["id"] == sel[0]), None)
+
+    def _sync_buttons(self):
+        row = self._selected()
+        active = bool(row) and row.get("active") is not False
+        marks = row.get("marks") if row else None
+        self.retire_btn.configure(state="normal" if active else "disabled")
+        self.restore_btn.configure(state="disabled" if (not row or active) else "normal")
+        self.replace_btn.configure(state="normal" if row else "disabled")
+        # Deleting cascades into the marks, so it is offered only when we KNOW
+        # there are none. An unknown count (no migration) counts as "has marks".
+        self.delete_btn.configure(
+            state="normal" if (row and marks == 0) else "disabled")
+
+    # ---------- actions ----------
+    def retire(self):
+        row = self._selected()
+        if not row:
+            return
+        marks = row.get("marks")
+        extra = ("" if marks in (0, None) else
+                 f"\n\nIts {marks} existing mark(s) are kept and stay analysable.")
+        if not messagebox.askyesno(
+                "Take this clip down?",
+                f"Clip #{row.get('video_number')} - {row.get('title')}\n\n"
+                f"It stops being served to participants straight away."
+                f"{extra}\n\nYou can put it back at any time.",
+                parent=self):
+            return
+        reason = simpledialog.askstring(
+            "Why?", "A short note for the record (optional):", parent=self) or ""
+        try:
+            self._sb().set_active(row["id"], False, reason)
+        except Exception as exc:
+            messagebox.showerror("Could not take it down", str(exc), parent=self)
+            return
+        self.app.write_log(f"Took down clip #{row.get('video_number')} "
+                           f"({row.get('storage_path')}).", "warn")
+        self.refresh()
+
+    def restore(self):
+        row = self._selected()
+        if not row:
+            return
+        try:
+            self._sb().set_active(row["id"], True)
+        except Exception as exc:
+            messagebox.showerror("Could not put it back", str(exc), parent=self)
+            return
+        self.app.write_log(f"Put clip #{row.get('video_number')} back on the site.", "good")
+        self.refresh()
+
+    def delete(self):
+        row = self._selected()
+        if not row or row.get("marks") != 0:
+            return
+        if not messagebox.askyesno(
+                "Delete permanently?",
+                f"Clip #{row.get('video_number')} - {row.get('title')}\n\n"
+                "Nothing has marked this clip, so no study data is lost.\n"
+                "The row and its file are removed for good. This cannot be undone.",
+                parent=self):
+            return
+        try:
+            sb = self._sb()
+            sb.delete_video(row["id"])
+            if row.get("storage_path"):
+                sb.remove_file(row["storage_path"])
+        except Exception as exc:
+            messagebox.showerror("Could not delete", str(exc), parent=self)
+            return
+        self.app.write_log(f"Deleted clip #{row.get('video_number')} "
+                           f"({row.get('storage_path')}) - it had no marks.", "warn")
+        self.refresh()
+
+    def replace(self):
+        row = self._selected()
+        if not row:
+            return
+        video = filedialog.askopenfilename(
+            title=f"Corrected recording for clip #{row.get('video_number')}",
+            initialdir=self.app.src_var.get() or ROOT,
+            filetypes=[("Video", "*.mp4 *.mov *.mkv *.avi"), ("All files", "*.*")],
+            parent=self)
+        if not video:
+            return
+        vp = Path(video)
+        stamp = vp.with_suffix("").with_suffix(".stamp.json")
+        if not stamp.exists():
+            stamp = vp.parent / (vp.stem + ".stamp.json")
+        if not stamp.exists():
+            if not messagebox.askyesno(
+                    "No stamp file",
+                    f"No {vp.stem}.stamp.json sits next to this recording.\n\n"
+                    "Without it the clip has no release frame, so the site will "
+                    "time from the start of the video instead.\n\nGo on anyway?",
+                    parent=self):
+                return
+        if stamp.exists():
+            clip = Clip.load(vp, stamp)
+            if clip.status == "failed":
+                messagebox.showerror("Could not read that recording", clip.note, parent=self)
+                return
+        else:
+            # No sidecar: the clip still plays, it just has no release frame, so
+            # the site times from the start of the video (and there is nothing
+            # to burn a flash onto).
+            clip = Clip(video=vp, stamp=vp)
+
+        if not messagebox.askyesno(
+                "Replace this clip?",
+                f"Clip #{row.get('video_number')} - {row.get('title')}\n\n"
+                f"New file: {vp.name}\n\n"
+                "The version on the site now is retired (its marks are kept), and "
+                "this recording goes up in its place under the same clip number.",
+                parent=self):
+            return
+        reason = simpledialog.askstring(
+            "Why?", "A short note for the record (optional):", parent=self) or ""
+
+        self.app.write_log(f"Replacing clip #{row.get('video_number')} with {vp.name} ...")
+        self.status.configure(text="Replacing - see the main window's log")
+        Replacer(row, clip, self.app.gather(), reason, self.app.events).start()
 
 
 if __name__ == "__main__":
