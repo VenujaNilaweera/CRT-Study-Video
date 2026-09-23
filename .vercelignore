@@ -1,0 +1,13 @@
+# Only the site itself has to be public: index.html, styles.css, and
+# assets/ (images + the onboarding demo video). Everything else in this repo
+# is local tooling, migration scripts or source material with no reason to
+# be served to a visitor - excluded here so `vercel deploy` doesn't publish
+# studio.py, the Supabase SQL files, or the README at the live URL.
+*.py
+*.sql
+*.md
+*.txt
+walkthrough_src/
+__pycache__/
+CRTtest01.mp4
+.gitignore
