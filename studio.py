@@ -34,6 +34,20 @@ timelines are bridged by FRAME NUMBER, never by seconds:
 The upload keeps frame_count identical to the source so those frame numbers
 stay valid, and encodes all-intra (-g 1) so the browser can seek to any single
 frame exactly.
+
+SITE NAMES AND TAKEN-DOWN CLIPS ON THIS LAPTOP
+----------------------------------------------
+After every upload, and whenever "Sync names & folders" is pressed, each
+recording's .stamp.json is given a "site" block holding the name the site
+uses for it ("CRT 1-07") and the clip's uuid - the recording itself is never
+renamed. Clips taken down on the site are moved into a taken_down subfolder
+(and back out if put back), and clip_names.csv in the working folder lists
+every site name next to its recording. See crt_local.py.
+
+PARTICIPANT IDS
+---------------
+This tool never creates participant IDs. Every mark is given its Study ID by
+the database itself (supabase_participant_ids.sql).
 """
 
 from __future__ import annotations
@@ -48,6 +62,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import requests
+
+import crt_local
 
 try:
     import cv2
@@ -504,6 +520,32 @@ class Supabase:
 
 
 # ===========================================================================
+#  Site names and taken-down clips on this laptop (see crt_local.py)
+# ===========================================================================
+def label_stamps(row: dict, *stamps: Path) -> None:
+    """Write the site's name for a just-saved clip into its stamp file(s).
+    Best effort: a stamp that cannot be written never fails an upload."""
+    for stamp in stamps:
+        try:
+            crt_local.write_site_info(Path(stamp), row)
+        except Exception:
+            pass
+
+
+def run_sync(sb: "Supabase", s: "Settings", log) -> None:
+    """Label every local recording with its site name, move taken-down clips
+    into taken_down/ (and put-back ones out again), rewrite clip_names.csv."""
+    try:
+        rows = sb.library()
+        rep = crt_local.sync_local(rows, s.src_dir, s.work_dir)
+    except Exception as exc:
+        log(f"Could not sync names & folders: {exc}", "error")
+        return
+    for msg, tone in rep.lines():
+        log(msg, tone)
+
+
+# ===========================================================================
 #  The pipeline (runs off the UI thread)
 # ===========================================================================
 class Pipeline(threading.Thread):
@@ -655,7 +697,7 @@ class Pipeline(threading.Thread):
                 site_title = site_name(cur_id, number)
                 real_fps = (clip.frame_count / clip.recording_duration_s
                             if clip.frame_count and clip.recording_duration_s else clip.capture_fps)
-                sb.insert_video({
+                saved = sb.insert_video({
                     "collection_id": cur_id,
                     "video_number": number,
                     "title": site_title,
@@ -674,6 +716,9 @@ class Pipeline(threading.Thread):
                 # Record it only once the row is safely in the database, so a
                 # failure part-way through never marks a clip as published.
                 append_ledger(work, clip.video.name, frames, cur_id, number)
+                # And write the site's name for it into the stamp files here
+                # (the source one and the copy beside the encode).
+                label_stamps(saved, clip.stamp, work / clip.stamp.name)
 
                 clip.collection_id, clip.video_number = cur_id, number
                 clip.site_title = site_title
@@ -693,6 +738,8 @@ class Pipeline(threading.Thread):
 
         self.log(f"Finished - {done} uploaded, {failed} failed.",
                  "good" if not failed else "warn")
+        if done:
+            run_sync(sb, self.s, self.log)
         if done:
             self.log("Reload the study site to see them (hard-refresh).", "good")
         self.emit("finished", ok=failed == 0)
@@ -809,7 +856,7 @@ class Replacer(threading.Thread):
         sb.set_active(self.row["id"], False, self.reason or "replaced with a corrected upload")
 
         try:
-            sb.insert_video(new_row, upsert=False)
+            saved = sb.insert_video(new_row, upsert=False)
         except RuntimeError as exc:
             # Some schemas put a unique index on (collection_id, video_number).
             # Reuse is then impossible, so fall back to a fresh number rather
@@ -822,12 +869,16 @@ class Replacer(threading.Thread):
                          f"the replacement went in as #{nxt}, not #{number}.", "warn")
                 new_row["video_number"] = nxt
                 new_row["title"] = site_name(self.row.get("collection_id"), nxt)
-                sb.insert_video(new_row, upsert=False)
+                saved = sb.insert_video(new_row, upsert=False)
             else:
                 raise
 
+        label_stamps({**new_row, **(saved or {})}, clip.stamp, work / clip.stamp.name)
         self.log(f"Replaced clip #{number}. The old version keeps its marks and "
                  f"stays in the table, retired.", "good")
+        # Moves the old recording into taken_down/ - but only once the new
+        # one's stamp names the new clip, so a file corrected in place stays.
+        run_sync(sb, self.s, self.log)
         self.log("Hard-refresh the study site to see the new file.", "good")
         self.q.put({"kind": "replaced", "ok": True})
 
@@ -984,6 +1035,11 @@ class App(tk.Tk):
         # file it came from, and how to take a bad one down or swap it out.
         self._btn(side, "Published clips...", self.open_library, "ghost").pack(
             fill="x", pady=(8, 0))
+        # Site names into the stamp files, taken-down clips into taken_down/,
+        # and clip_names.csv - run it any time; it only changes what is out of
+        # step with the site.
+        self._btn(side, "Sync names & folders", self.sync_local, "ghost").pack(
+            fill="x", pady=(8, 0))
 
         # ---- progress + log ----
         foot = ttk.Frame(self, padding=(18, 0, 18, 16))
@@ -1039,6 +1095,8 @@ class App(tk.Tk):
         # glance which clips are new before anything is run.
         ledger = load_ledger(self.work_var.get())
         for clip in self.clips:
+            # The site's own name for it, written into the stamp by a sync.
+            clip.site_title = crt_local.site_title_of(clip.stamp)
             if clip.status == "waiting" and clip.name in ledger:
                 parts = ledger[clip.name].split("\t")
                 where = f"{parts[2]} #{parts[3]}" if len(parts) > 3 else "already published"
@@ -1046,7 +1104,8 @@ class App(tk.Tk):
                 # Recover the site name from the ledger (name, frames,
                 # collection, number, when), so a clip published in an earlier
                 # run still shows what participants call it.
-                if len(parts) > 3 and str(parts[3]).strip().isdigit():
+                if (not clip.site_title and len(parts) > 3
+                        and str(parts[3]).strip().isdigit()):
                     clip.site_title = site_name(parts[2], int(parts[3]))
 
         for clip in self.clips:
@@ -1140,11 +1199,26 @@ class App(tk.Tk):
                     self.progress_lbl.configure(
                         text="Done" if ev.get("ok") else "Finished with errors")
                 elif kind == "replaced":
+                    self.scan()                # the old recording may have moved
                     if self.library_win and self.library_win.winfo_exists():
                         self.library_win.refresh()
         except queue.Empty:
             pass
         self.after(80, self._drain)
+
+    def sync_local(self):
+        if self.pipeline and self.pipeline.is_alive():
+            messagebox.showinfo("Busy", "Wait for the current upload to finish.")
+            return
+        s = self.gather()
+        if not s.service_key:
+            messagebox.showwarning("Service key needed",
+                                   "Paste the Supabase service_role key first.")
+            return
+        self.write_log("Syncing site names and folders ...")
+        self.update_idletasks()
+        run_sync(Supabase(s.service_key), s, self.write_log)
+        self.scan()
 
     # ---------- library ----------
     def open_library(self):
@@ -1171,6 +1245,7 @@ class LibraryWindow(tk.Toplevel):
         super().__init__(app)
         self.app = app
         self.rows: list[dict] = []
+        self.recordings: dict[str, str] = {}
         self.title("Published clips")
         self.configure(bg=BG)
         self.geometry("1020x560")
@@ -1204,21 +1279,23 @@ class LibraryWindow(tk.Toplevel):
         ent = ttk.Entry(find, textvariable=self.query, width=34)
         ent.pack(side="left", padx=(8, 8))
         self.query.trace_add("write", lambda *_a: self._fill())
-        ttk.Label(find, text="clip number, site name or file - e.g. \"CRT Test 07\" or just 7",
+        ttk.Label(find, text="clip number, site name or file - e.g. \"CRT 1-07\" or just 7",
                   style="Dim.TLabel").pack(side="left")
 
         wrap = ttk.Frame(self, style="Card.TFrame", padding=1)
         wrap.pack(fill="both", expand=True, padx=16)
-        cols = ("num", "coll", "title", "file", "marks", "state")
+        cols = ("num", "coll", "title", "recording", "file", "marks", "state")
         self.tree = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="browse")
         for cid, label, w, anchor in (
             ("num", "#", 50, "center"), ("coll", "Collection", 110, "w"),
-            ("title", "Title", 190, "w"), ("file", "File", 300, "w"),
+            ("title", "Site name", 110, "w"),
+            ("recording", "Recording on this laptop", 250, "w"),
+            ("file", "File on the site", 200, "w"),
             ("marks", "Marks", 70, "center"), ("state", "State", 110, "w"),
         ):
             self.tree.heading(cid, text=label)
             self.tree.column(cid, width=w, anchor=anchor,
-                             stretch=(cid in ("title", "file")))
+                             stretch=(cid in ("recording", "file")))
         vsb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(side="left", fill="both", expand=True)
@@ -1254,6 +1331,9 @@ class LibraryWindow(tk.Toplevel):
             self.status.configure(text="")
             messagebox.showerror("Could not load", str(exc), parent=self)
             return
+        # Which recording each clip is, from the stamps a sync has labelled.
+        self.recordings = crt_local.recording_names(self.app.src_var.get(),
+                                                    self.app.work_var.get())
         self._fill()
         live = sum(1 for r in self.rows if r.get("active") is not False)
         retired = len(self.rows) - live
@@ -1275,6 +1355,7 @@ class LibraryWindow(tk.Toplevel):
             return q.lstrip("0") == num.lstrip("0")
         hay = " ".join(str(row.get(k) or "") for k in
                        ("video_number", "title", "storage_path", "collection_id")).lower()
+        hay += " " + self.recordings.get(row.get("id"), "").lower()
         return q in hay
 
     def _fill(self):
@@ -1291,6 +1372,7 @@ class LibraryWindow(tk.Toplevel):
                     row.get("video_number", "-"),
                     row.get("collection_id", "-"),
                     row.get("title", "-"),
+                    self.recordings.get(row.get("id"), "-"),
                     row.get("storage_path", "-"),
                     "?" if marks is None else marks,
                     "live" if active else "retired",
@@ -1314,6 +1396,12 @@ class LibraryWindow(tk.Toplevel):
         # there are none. An unknown count (no migration) counts as "has marks".
         self.delete_btn.configure(
             state="normal" if (row and marks == 0) else "disabled")
+
+    def _after_change(self):
+        """Move the recording to match (taken_down/ or back), then redraw."""
+        run_sync(self._sb(), self.app.gather(), self.app.write_log)
+        self.app.scan()
+        self.refresh()
 
     # ---------- actions ----------
     def retire(self):
@@ -1339,7 +1427,7 @@ class LibraryWindow(tk.Toplevel):
             return
         self.app.write_log(f"Took down clip #{row.get('video_number')} "
                            f"({row.get('storage_path')}).", "warn")
-        self.refresh()
+        self._after_change()
 
     def restore(self):
         row = self._selected()
@@ -1351,7 +1439,7 @@ class LibraryWindow(tk.Toplevel):
             messagebox.showerror("Could not put it back", str(exc), parent=self)
             return
         self.app.write_log(f"Put clip #{row.get('video_number')} back on the site.", "good")
-        self.refresh()
+        self._after_change()
 
     def delete(self):
         row = self._selected()

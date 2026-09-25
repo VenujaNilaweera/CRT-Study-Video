@@ -72,6 +72,7 @@ Each file is self-contained, explains itself at the top, and is safe to run more
 | `supabase_returning_users.sql` | Powers the "welcome back" prompt: recognising a name that's signed in before and prefilling their role/age. Adds the `crt_lookup_participant` RPC. | The name field behaves like a normal first-time field - no prefill, no error either. |
 | `supabase_retire_clips.sql` | Lets a bad clip be taken off the site without losing its marks. Adds `videos.active` plus the `crt_clip_usage` view Studio reads mark counts from. | Studio's "Published clips" window can still list clips, but cannot take any down and cannot show mark counts. |
 | `supabase_clip_names.sql` | Renames existing clips so each name identifies one clip: `CRT 1-07`, `CRT 2-07`. Only needed once, for clips uploaded before this scheme. | Clips uploaded earlier keep titles like `CRT Test 07`, which repeat once per collection. New uploads get the new names either way. |
+| `supabase_participant_ids.sql` | Gives every participant a stable **Study ID** (`P-7F31A2C9`) in a `study_participants` table and stamps it on every mark (`annotations.participant_id`) - old marks included. Assigned by the database itself, so the site needs no change. Also restores `crt_seen_videos(text)` if the older main-branch participant block removed it. | The analysis falls back to grouping people by name. |
 
 The app is written to degrade gracefully if any of these haven't been run yet - it just quietly does the simpler thing instead of erroring.
 
@@ -105,6 +106,16 @@ Two details worth knowing, both deliberate:
 
 - A replacement is a **new row with a new storage filename**, not an edit of the old one. Uploads use `x-upsert`, so re-using the filename would overwrite the original file - and the retired row would then point at the new footage, quietly attaching the bad clip's marks to the good clip's video. Keeping them separate means marks made on the broken version stay with the broken version, where they belong, instead of being merged into the corrected one's results.
 - Retiring never disturbs anything already recorded. Annotations reference `videos.id` (a uuid), never `video_number`, so a mark can never be re-attributed to a different clip by anything that happens to the numbering.
+
+### Site names and taken-down clips on your laptop
+
+After every upload - and whenever you press **Sync names & folders** - Studio makes the recordings on your laptop match the site:
+
+- Each recording's `.stamp.json` gets a `"site"` block with the name participants see (`CRT 1-07`) and the clip's uuid. Nothing else in the file changes, and the recording is never renamed. Press **Sync names & folders** once to label clips uploaded before this existed.
+- A clip taken down on the site has its recording and stamp moved into a **`taken_down`** subfolder (of the source folder and of the working folder), so it can't be mixed up with the good ones or uploaded again. **Put back** moves it back.
+- `clip_names.csv` in the working folder lists every site name next to its recording file - it opens in Excel.
+
+A file is only moved or labelled when it is certain which clip it is. Anything ambiguous is left where it is and named in the log.
 
 ### Frame rate overrides
 

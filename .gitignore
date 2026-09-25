@@ -34,8 +34,9 @@ work/
 # Collected data - generated at runtime, not source
 data.xlsx
 
-# Personal analysis scripts
+# Personal analysis scripts (holds the service key) and its data backups
 analysis.py
+backups/
 
 # Video files and metadata (never commit videos or their generated stamp files)
 videos/
