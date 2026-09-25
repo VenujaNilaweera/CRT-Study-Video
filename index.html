@@ -82,7 +82,7 @@ const SESSION_KEY = 'crt-study-session';
 const THEME_KEY = 'crt-theme';
 const INTRO_KEY = 'crt-intro-seen';   // login intro animation plays once per browser
 const ONBOARD_KEY = 'crt-onboarding-seen';   // names that have finished the walkthrough
-const FLAG_KEY = 'crt-flagged-clips';        // clips already reported broken THIS browser
+const FLAG_KEY = 'crt-flagged-clips-v2';     // clips already reported broken THIS browser (v2: drops false auto-flags)
 const LAST_LOGIN_KEY = 'crt-last-login';     // name/role/age from the last sign-in on this device
 
 /* =========================================================================
@@ -442,12 +442,14 @@ const SUPA_HEADERS = {
      it stops rather than silently blowing through the whole set - and says the
      clips are not loading, which is the honest message and offers a retry. */
   const AUTO_SKIP_LIMIT = 4;
+  const autoReportedClips = new Set();
   function autoSkipBrokenClip(clip) {
     if (clip) {
+      // Deduped in memory only: an automatic report must not mark the clip as
+      // "reported" for the participant's own Flag button on this browser.
       const key = clipKey(clip);
-      if (key && !state.flaggedClips.has(key)) {
-        state.flaggedClips.add(key);
-        saveFlaggedClips();
+      if (key && !autoReportedClips.has(key)) {
+        autoReportedClips.add(key);
         // Best effort: the skip must happen whether or not the email sends.
         try { reportBrokenClip(clip, true).catch(() => {}); } catch {}
       }
@@ -1979,11 +1981,12 @@ const SUPA_HEADERS = {
 
     // ---- a clip that will not load must never strand the participant ----
     // Two ways in: the browser fires 'error' on a corrupt or missing file, or
-    // nothing ever arrives (readyState stays 0) within a grace window. Either
-    // way, report which clip it was and move on by itself - see
-    // autoSkipBrokenClip(). Guarded so it can only fire once per clip, and only
-    // while we are still ON this clip (a render swaps in a new <video>, and the
-    // old element's late timer must not skip the clip that replaced it).
+    // the element has been handed a source and then gone completely silent
+    // for a long stretch. Either way, report which clip it was and move on by
+    // itself - see autoSkipBrokenClip(). Guarded so it can only fire once per
+    // clip, and only while we are still ON this clip (a render swaps in a new
+    // <video>, and the old element's late timer must not skip the clip that
+    // replaced it).
     let failed = false;
     const failThisClip = () => {
       if (failed) return;
@@ -1992,21 +1995,27 @@ const SUPA_HEADERS = {
       const overlay = document.getElementById('vidLoading');
       if (overlay) {
         overlay.style.display = '';
-        overlay.innerHTML = 'This clip could not be played - skipping to the next one…';
+        overlay.innerHTML = `${esc((v0 && v0.title) || 'This clip')} could not be played - skipping to the next one…`;
       }
       // A brief beat so the message is seen, then advance.
       setTimeout(() => { if (document.getElementById('vid') === vid) autoSkipBrokenClip(v0); }, 1400);
     };
     vid.addEventListener('error', failThisClip);
-    // No bytes at all after this long is a broken/unreachable file, not a slow
-    // one (a slow clip still reports metadata, readyState >= 1, well before
-    // now), so treat readyState 0 here as a failure. A clip that has metadata
-    // but is merely buffering is left alone to finish.
-    setTimeout(() => {
-      if (everReady || failed) return;
-      if (vid.readyState >= 1) return;   // metadata is in: slow, not broken
-      failThisClip();
-    }, 9000);
+    // Stall watchdog. It only runs its clock once the <video> actually has a
+    // src: while the full-clip preload below is still downloading (always the
+    // case for clip 1, which nothing prefetched), a slow connection is just
+    // slow - the download itself fails fast with an 'error' if the file is
+    // really missing. Once a src is set, any sign of life (progress,
+    // metadata) resets the clock; only a long total silence counts as broken.
+    const STALL_MS = 20000;
+    let lastLife = Date.now();
+    const alive = () => { lastLife = Date.now(); };
+    ['loadstart', 'progress', 'loadedmetadata', 'loadeddata'].forEach(ev => vid.addEventListener(ev, alive));
+    const watchdog = setInterval(() => {
+      if (everReady || failed || document.getElementById('vid') !== vid) { clearInterval(watchdog); return; }
+      if (vid.readyState >= 1 || !vid.getAttribute('src')) { alive(); return; }
+      if (Date.now() - lastLife > STALL_MS) { clearInterval(watchdog); failThisClip(); }
+    }, 1000);
     // Safety net: never leave the overlay stuck if the browser is stingy with
     // 'canplaythrough' - once metadata is in, unlock after a short grace period.
     setTimeout(() => { if (!everReady && !failed && vid.readyState >= 1) markReady(); }, 4000);
