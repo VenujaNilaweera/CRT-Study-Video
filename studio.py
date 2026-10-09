@@ -995,6 +995,7 @@ class App(tk.Tk):
         self.pipeline: Pipeline | None = None
         self.filter = tk.StringVar(value="All")
         self.search = tk.StringVar()
+        self.checked: set[str] = set()                 # recordings ticked for upload
 
         self._build_style()
         self._build_ui()
@@ -1124,16 +1125,22 @@ class App(tk.Tk):
         HoverButton(bar, "Show in folder", self._show_selected, "ghost").pack(side="right", padx=6)
         HoverButton(bar, "Play", self._play_selected, "primary").pack(side="right")
 
-        ttk.Label(parent, text="Double-click a recording to play it (with the green "
-                               "release flash, as participants see it, once it has been "
-                               "encoded). Right-click for more.",
-                  style="CardDim.TLabel").pack(anchor="w", padx=14, pady=(0, 8))
+        bar2 = ttk.Frame(parent, style="Card.TFrame", padding=(14, 0, 14, 8))
+        bar2.pack(fill="x")
+        ttk.Label(bar2, text="Tick to upload (box or Space)  \u00b7  double-click to play  "
+                             "\u00b7  right-click for more",
+                  style="CardDim.TLabel").pack(side="left")
+        HoverButton(bar2, "Clear ticks", self._untick_all, "link").pack(side="right")
+        HoverButton(bar2, "Tick all new", self._tick_all_new, "link").pack(side="right")
+        self.tick_lbl = ttk.Label(bar2, text="", style="Card.TLabel")
+        self.tick_lbl.pack(side="right", padx=(0, 10))
 
         wrap = ttk.Frame(parent, style="Card.TFrame")
         wrap.pack(fill="both", expand=True, padx=1, pady=(0, 1))
-        cols = ("name", "site", "frames", "release", "status", "note")
+        cols = ("pick", "name", "site", "frames", "release", "status", "note")
         self.tree = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="browse")
         for cid, label, w, anchor in (
+            ("pick", "\u2611", 46, "center"),
             ("name", "Recording", 260, "w"),
             ("site", "Site name", 110, "w"),
             ("frames", "Frames", 80, "center"),
@@ -1150,9 +1157,12 @@ class App(tk.Tk):
         for status, colour in STATUS_COLORS.items():
             self.tree.tag_configure(status, foreground=colour)
         self.tree.tag_configure("alt", background=ROW_ALT)
-        self.tree.bind("<Double-1>", lambda e: self._play_selected())
+        self.tree.bind("<Double-1>", self._double_click)
         self.tree.bind("<Return>", lambda e: self._play_selected())
+        self.tree.bind("<Button-1>", self._click)
+        self.tree.bind("<space>", lambda e: self._toggle_selected() or "break")
         self.tree.bind("<Button-3>", self._rec_menu)
+        self.tree.heading("pick", command=self._tick_all_new)
 
         self.empty_lbl = ttk.Label(wrap, text="", style="CardDim.TLabel")
 
@@ -1330,8 +1340,63 @@ class App(tk.Tk):
         self.write_log(f"Found {len(self.clips)} recording(s) in {folder} - "
                        f"{new} not yet on the site.")
 
+    # ---------- ticks ----------
+    @staticmethod
+    def _tickable(clip: Clip) -> bool:
+        """Only recordings not on the site yet can be ticked for upload."""
+        return clip.status in ("waiting", "failed")
+
+    def _tick_mark(self, clip: Clip) -> str:
+        if not self._tickable(clip):
+            return ""
+        return "\u2611" if clip.name in self.checked else "\u2610"
+
+    def _toggle(self, name: str):
+        clip = next((c for c in self.clips if c.name == name), None)
+        if not clip or not self._tickable(clip):
+            return
+        self.checked ^= {name}
+        self.update_row(clip)
+
+    def _toggle_selected(self):
+        sel = self.tree.selection()
+        if sel:
+            self._toggle(sel[0])
+
+    def _click(self, event):
+        if self.tree.identify_region(event.x, event.y) != "cell":
+            return
+        if self.tree.identify_column(event.x) != "#1":
+            return
+        row = self.tree.identify_row(event.y)
+        if row:
+            self.tree.selection_set(row)
+            self._toggle(row)
+            return "break"
+
+    def _double_click(self, event):
+        if self.tree.identify_column(event.x) == "#1":
+            return "break"                             # fast double-tick, not play
+        self._play_selected()
+
+    def _tick_all_new(self):
+        shown = set(self.tree.get_children())
+        self.checked |= {c.name for c in self.clips if self._tickable(c) and c.name in shown}
+        self._fill_recordings()
+
+    def _untick_all(self):
+        self.checked.clear()
+        self._fill_recordings()
+
+    def _update_ticks(self):
+        self.checked &= {c.name for c in self.clips if self._tickable(c)}
+        n = len(self.checked)
+        self.tick_lbl.configure(text=f"{n} ticked" if n else "")
+        if not (self.pipeline and self.pipeline.is_alive()):
+            self.go_btn.configure(text=f"Upload {n} ticked" if n else "Process & Upload")
+
     def _row_values(self, clip: Clip):
-        return (clip.name, clip.site_title or "—", clip.frame_count or "—",
+        return (self._tick_mark(clip), clip.name, clip.site_title or "—", clip.frame_count or "—",
                 clip.stamped_frame if clip.stamped_frame is not None else "—",
                 STATUS_LABEL.get(clip.status, clip.status), clip.note)
 
@@ -1360,12 +1425,14 @@ class App(tk.Tk):
                                      "No recordings with a .stamp.json found in the source folder.")
             self.empty_lbl.place(relx=.5, rely=.35, anchor="center")
         self._set_chips()
+        self._update_ticks()
 
     def update_row(self, clip: Clip):
         if self.tree.exists(clip.name):
             alt = ("alt",) if "alt" in self.tree.item(clip.name, "tags") else ()
             self.tree.item(clip.name, tags=(clip.status,) + alt, values=self._row_values(clip))
         self._set_chips()
+        self._update_ticks()
 
     def _selected_clip(self) -> Clip | None:
         sel = self.tree.selection()
@@ -1450,16 +1517,35 @@ class App(tk.Tk):
             messagebox.showerror("ffmpeg missing", "Install ffmpeg and make sure it is on PATH.")
             return
 
-        for clip in self.clips:                        # reset for a fresh run
-            if clip.status in ("done", "failed", "skipped"):
+        # Ticked recordings only. With nothing ticked, offer every new one -
+        # but ask first, so a stray click never uploads the whole folder.
+        if self.checked:
+            targets = [c for c in self.clips if c.name in self.checked]
+        else:
+            new = [c for c in self.clips if self._tickable(c)]
+            if not new:
+                messagebox.showinfo("Nothing new", "Every recording here is already on the site.")
+                return
+            if not messagebox.askyesno(
+                    "Upload all new recordings?",
+                    f"Nothing is ticked.\n\nUpload all {len(new)} new recording(s)?\n\n"
+                    "To upload only some, tick them in the first column instead.",
+                    parent=self):
+                return
+            targets = new
+
+        for clip in targets:                           # reset for a fresh run
+            if clip.status == "failed":
                 clip.status, clip.note = "waiting", ""
-        self.filter.set("All")
+        self.write_log(f"Uploading {len(targets)} recording(s): "
+                       + ", ".join(c.name for c in targets[:5])
+                       + (" ..." if len(targets) > 5 else ""))
         self._fill_recordings()
 
         self.go_btn.pack_forget()
         self.cancel_btn.pack(fill="x", side="bottom")
         self.progress.configure(value=0)
-        self.pipeline = Pipeline(self.clips, s, self.events)
+        self.pipeline = Pipeline(targets, s, self.events)
         self.pipeline.start()
 
     def stop(self):
@@ -1523,6 +1609,7 @@ class App(tk.Tk):
                 elif kind == "finished":
                     self.cancel_btn.pack_forget()
                     self.go_btn.pack(fill="x", side="bottom")
+                    self._update_ticks()               # uploaded ones untick themselves
                     self.progress_lbl.configure(
                         text="Done" if ev.get("ok") else "Finished with errors")
                     self.lib_tab.loaded = False        # new clips on the site
