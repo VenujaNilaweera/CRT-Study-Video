@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"name": "full code",
+			"path": "../../fullcode/arduino/full code"
+		}
+	],
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			"/^cd \"d:\\\\project\\\\Reserch\\\\code\\\\python\" ; python -m venv lab_env$/": {
+				"approve": true,
+				"matchCommandLine": true
+			}
+		},
+		"latex-workshop.view.pdf.viewer": "tab"
+	}
+}

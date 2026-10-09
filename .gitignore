@@ -36,6 +36,8 @@ data.xlsx
 
 # Personal analysis scripts (holds the service key) and its data backups
 analysis.py
+analysis new.py
+analysis old.py
 backups/
 
 # Video files and metadata (never commit videos or their generated stamp files)
