@@ -490,6 +490,20 @@ class Supabase:
         if not r.ok:
             raise RuntimeError(f"could not update the clip ({r.status_code}): {r.text[:200]}")
 
+    def set_core(self, video_id: str, position: int | None) -> None:
+        """Put a clip in the hand-picked first set (1 = first) or take it out (None)."""
+        r = requests.patch(
+            f"{self.rest}/videos?id=eq.{video_id}",
+            headers={**self.headers, "Content-Type": "application/json",
+                     "Prefer": "return=minimal"},
+            json={"core_order": position}, timeout=30)
+        if r.status_code in (400, 404) and "core_order" in r.text:
+            raise RuntimeError(
+                "this project has no 'core_order' column yet - run "
+                "supabase_core_clips.sql in the Supabase SQL editor first")
+        if not r.ok:
+            raise RuntimeError(f"could not update the first 10 ({r.status_code}): {r.text[:200]}")
+
     def delete_video(self, video_id: str) -> None:
         """Only ever called for a clip with zero marks - see the caller.
 
@@ -854,6 +868,12 @@ class Replacer(threading.Thread):
         # rows on the same number, which the queue would serve as two clips.
         self.log("Retiring the old version ...")
         sb.set_active(self.row["id"], False, self.reason or "replaced with a corrected upload")
+        # A clip in the hand-picked first 10 hands its slot to the replacement
+        # (the slot is unique, so the old row must let go of it first).
+        core = self.row.get("core_order")
+        if core is not None:
+            sb.set_core(self.row["id"], None)
+            new_row["core_order"] = core
 
         try:
             saved = sb.insert_video(new_row, upsert=False)
@@ -876,6 +896,8 @@ class Replacer(threading.Thread):
         label_stamps({**new_row, **(saved or {})}, clip.stamp, work / clip.stamp.name)
         self.log(f"Replaced clip #{number}. The old version keeps its marks and "
                  f"stays in the table, retired.", "good")
+        if core is not None:
+            self.log(f"The replacement keeps first-10 position {core}.", "good")
         # Moves the old recording into taken_down/ - but only once the new
         # one's stamp names the new clip, so a file corrected in place stays.
         run_sync(sb, self.s, self.log)
@@ -900,6 +922,8 @@ FONT_SEMI = "Segoe UI Semibold"
 MONO = "Consolas"
 ROW_ALT = "#131a1d"                                    # zebra stripe
 HOVER = "#243035"
+
+CORE_SIZE = 10                                         # clips in the hand-picked first set
 
 STATUS_LABEL = {
     "waiting":   "New",
@@ -1646,7 +1670,7 @@ class LibraryPanel(ttk.Frame):
         bar.pack(fill="x")
         seg = ttk.Frame(bar, style="Card.TFrame")
         seg.pack(side="left")
-        for name in ("All", "Live", "Taken down"):
+        for name in ("All", "First 10", "Live", "Taken down"):
             ttk.Radiobutton(seg, text=name, value=name, variable=self.show,
                             style="Seg.TRadiobutton", command=self._fill).pack(side="left", padx=(0, 2))
         ent = ttk.Entry(bar, textvariable=self.query, width=28)
@@ -1657,16 +1681,16 @@ class LibraryPanel(ttk.Frame):
         self.count_lbl.pack(side="left", padx=(14, 0))
         HoverButton(bar, "Refresh", self.refresh, "ghost").pack(side="right")
 
-        ttk.Label(self, text="Double-click a clip to play it. Taking a clip down keeps "
-                             "every mark made on it; deleting is only offered for clips "
-                             "nobody has marked.",
+        ttk.Label(self, text="\u2605 First 10: every participant gets these first, in this "
+                             "order  \u00b7  double-click to play",
                   style="CardDim.TLabel").pack(anchor="w", padx=14, pady=(0, 8))
 
         wrap = ttk.Frame(self, style="Card.TFrame")
         wrap.pack(fill="both", expand=True, padx=1)
-        cols = ("site", "coll", "num", "recording", "marks", "state")
+        cols = ("core", "site", "coll", "num", "recording", "marks", "state")
         self.tree = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="browse")
         for cid, label, w, anchor in (
+            ("core", "First 10", 80, "center"),
             ("site", "Site name", 110, "w"), ("coll", "Collection", 100, "w"),
             ("num", "#", 50, "center"), ("recording", "Recording", 300, "w"),
             ("marks", "Marks", 80, "center"), ("state", "State", 110, "w"),
@@ -1680,6 +1704,7 @@ class LibraryPanel(ttk.Frame):
         self.tree.tag_configure("live", foreground=INK)
         self.tree.tag_configure("retired", foreground="#6f8085")
         self.tree.tag_configure("alt", background=ROW_ALT)
+        self.tree.tag_configure("core", foreground=TEAL)
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self._sync_buttons())
         self.tree.bind("<Double-1>", lambda _e: self.play())
         self.tree.bind("<Return>", lambda _e: self.play())
@@ -1698,11 +1723,29 @@ class LibraryPanel(ttk.Frame):
         self.retire_btn.pack(side="left", padx=(8, 0))
         self.delete_btn = HoverButton(acts, "Delete permanently", self.delete, "danger")
         self.delete_btn.pack(side="right")
+
+        core = ttk.Frame(self, style="Card.TFrame", padding=(14, 0, 14, 12))
+        core.pack(fill="x")
+        ttk.Label(core, text="FIRST 10", style="Section.TLabel").pack(side="left", padx=(0, 10))
+        self.core_add_btn = HoverButton(core, "Add to first 10", self.core_add, "ghost")
+        self.core_add_btn.pack(side="left")
+        self.core_up_btn = HoverButton(core, "\u25b2 Earlier", lambda: self.core_move(-1), "ghost")
+        self.core_up_btn.pack(side="left", padx=(8, 0))
+        self.core_down_btn = HoverButton(core, "\u25bc Later", lambda: self.core_move(1), "ghost")
+        self.core_down_btn.pack(side="left", padx=(8, 0))
+        self.core_rm_btn = HoverButton(core, "Remove from first 10", self.core_remove, "ghost")
+        self.core_rm_btn.pack(side="left", padx=(8, 0))
+        self.core_lbl = ttk.Label(core, text="", style="CardDim.TLabel")
+        self.core_lbl.pack(side="left", padx=(12, 0))
         self._sync_buttons()
 
     # ---------- data ----------
     def _sb(self) -> Supabase:
         return Supabase(self.app.key_var.get().strip())
+
+    def _core_rows(self) -> list[dict]:
+        return sorted((r for r in self.rows if r.get("core_order") is not None),
+                      key=lambda r: r["core_order"])
 
     def refresh(self, quiet: bool = False):
         if not self.app.key_var.get().strip():
@@ -1750,21 +1793,32 @@ class LibraryPanel(ttk.Frame):
         want = self.show.get()
         self.tree.delete(*self.tree.get_children())
         shown = 0
-        for row in self.rows:
+        def order(r):
+            c = r.get("core_order")
+            return (0, c) if c is not None else (1, 0)
+        for row in sorted(self.rows, key=order):
             active = row.get("active") is not False
             if (want == "Live" and not active) or (want == "Taken down" and active):
+                continue
+            if want == "First 10" and row.get("core_order") is None:
                 continue
             if not self._matches(row, q):
                 continue
             marks = row.get("marks")
-            tags = ("live" if active else "retired",) + (("alt",) if shown % 2 else ())
+            core = row.get("core_order")
+            tags = (("core",) if core is not None and active else
+                    ("live" if active else "retired",)) + (("alt",) if shown % 2 else ())
             self.tree.insert("", "end", iid=row["id"], tags=tags, values=(
+                f"\u2605 {core}" if core is not None else "",
                 row.get("title") or "—", row.get("collection_id") or "—",
                 row.get("video_number", "—"), self._recording(row),
                 "?" if marks is None else marks,
                 "Live" if active else "Taken down"))
             shown += 1
         live = sum(1 for r in self.rows if r.get("active") is not False)
+        self.core_lbl.configure(
+            text=f"{len(self._core_rows())} of {CORE_SIZE} chosen" if self._core_supported()
+            else "Run supabase_core_clips.sql to use this")
         self.count_lbl.configure(
             text=f"{live} live · {len(self.rows) - live} taken down"
                  + ("" if not self.rows or self.rows[0].get("marks_known", True)
@@ -1791,6 +1845,19 @@ class LibraryPanel(ttk.Frame):
         # Deleting cascades into the marks, so it is offered only when we KNOW
         # there are none. An unknown count (no migration) counts as "has marks".
         self.delete_btn.configure(state="normal" if (row and marks == 0) else "disabled")
+        core = row.get("core_order") if row else None
+        cores = self._core_rows()
+        self.core_add_btn.configure(state="normal" if (
+            self._core_supported() and active and core is None and len(cores) < CORE_SIZE)
+            else "disabled")
+        self.core_rm_btn.configure(state="normal" if core is not None else "disabled")
+        self.core_up_btn.configure(state="normal" if (
+            core is not None and cores[0]["id"] != row["id"]) else "disabled")
+        self.core_down_btn.configure(state="normal" if (
+            core is not None and cores[-1]["id"] != row["id"]) else "disabled")
+
+    def _core_supported(self) -> bool:
+        return bool(self.rows) and "core_order" in self.rows[0]
 
     def _after_change(self):
         """Move the recording to match (taken_down/ or back), then redraw."""
@@ -1843,6 +1910,67 @@ class LibraryPanel(ttk.Frame):
         m.add_command(label="Replace file...", command=self.replace)
         m.tk_popup(event.x_root, event.y_root)
 
+    # ---------- first 10 ----------
+    def _core_apply(self, changes: list[tuple[str, int | None]], msg: str):
+        """Apply (video_id, position) changes, freeing every slot involved before
+        filling any (each position is unique in the database)."""
+        sb = self._sb()
+        try:
+            for vid, _pos in changes:
+                sb.set_core(vid, None)
+            for vid, pos in changes:
+                if pos is not None:
+                    sb.set_core(vid, pos)
+        except Exception as exc:
+            messagebox.showerror("Could not change the first 10", str(exc), parent=self)
+            self.refresh()
+            return
+        self.app.write_log(msg, "good")
+        keep = self.tree.selection()
+        self.refresh()
+        if keep and self.tree.exists(keep[0]):
+            self.tree.selection_set(keep[0])
+            self.tree.see(keep[0])
+
+    @staticmethod
+    def _renumber(ordered: list[dict]) -> list[tuple[str, int | None]]:
+        """Positions 1..n for the list given - only rows whose slot changes."""
+        return [(r["id"], i) for i, r in enumerate(ordered, 1) if r.get("core_order") != i]
+
+    def core_add(self):
+        row = self._selected()
+        if not row or row.get("core_order") is not None:
+            return
+        cores = self._core_rows()
+        if len(cores) >= CORE_SIZE:
+            messagebox.showinfo("First 10 is full",
+                                f"Remove a clip from the first {CORE_SIZE} first.", parent=self)
+            return
+        pos = len(cores) + 1
+        self._core_apply([(row["id"], pos)],
+                         f"{row.get('title')} added to the first 10 at position {pos}.")
+
+    def core_remove(self):
+        row = self._selected()
+        if not row or row.get("core_order") is None:
+            return
+        rest = [r for r in self._core_rows() if r["id"] != row["id"]]
+        self._core_apply([(row["id"], None)] + self._renumber(rest),
+                         f"{row.get('title')} removed from the first 10.")
+
+    def core_move(self, step: int):
+        row = self._selected()
+        cores = self._core_rows()
+        ids = [r["id"] for r in cores]
+        if not row or row["id"] not in ids:
+            return
+        i, j = ids.index(row["id"]), ids.index(row["id"]) + step
+        if not 0 <= j < len(cores):
+            return
+        cores[i], cores[j] = cores[j], cores[i]
+        self._core_apply(self._renumber(cores),
+                         f"{row.get('title')} moved to first-10 position {j + 1}.")
+
     # ---------- actions ----------
     def retire(self):
         row = self._selected()
@@ -1866,6 +1994,13 @@ class LibraryPanel(ttk.Frame):
             messagebox.showerror("Could not take it down", str(exc), parent=self)
             return
         self.app.write_log(f"Took down {row.get('title')} ({row.get('storage_path')}).", "warn")
+        # A taken-down clip can't be served, so it gives up its first-10 slot
+        # and the clips after it move up one.
+        if row.get("core_order") is not None:
+            rest = [r for r in self._core_rows() if r["id"] != row["id"]]
+            self._core_apply([(row["id"], None)] + self._renumber(rest),
+                             f"{row.get('title')} left the first 10 - add another clip "
+                             f"to fill the slot.")
         self._after_change()
 
     def restore(self):

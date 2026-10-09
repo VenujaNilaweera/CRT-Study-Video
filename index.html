@@ -283,6 +283,13 @@ const SUPA_HEADERS = {
        3. shuffle WITHIN each equal-count tier, so two people signing in at
           the same moment aren't handed the identical clip.
 
+     EXCEPT the core set: clips given a `core_order` in Studio ("Add to first
+     10") come first, for everyone, in that fixed order - so every participant
+     marks the same hand-picked clips and observers can be compared on common
+     ground. Balancing applies only to what comes after them. A returning
+     participant just continues: core clips they already marked are skipped
+     like any other. See supabase_core_clips.sql.
+
      `times_annotated` comes from the videos table (see supabase_balancing.sql).
      If that column isn't there yet every clip reads as zero, the whole library
      lands in one tier, and step 3 alone still scatters people across it. */
@@ -292,14 +299,16 @@ const SUPA_HEADERS = {
 
   function buildQueue(seenIds) {
     const rand = seededRandom(state.orderSeed ?? newOrderSeed());
+    const core = [];
     const tiers = new Map();
     for (const v of POOL) {
       if (v.videoId && seenIds.has(v.videoId)) continue;      // already marked
+      if (v.coreOrder != null) { core.push(v); continue; }    // the fixed first set
       const n = Number(v.timesAnnotated) || 0;
       if (!tiers.has(n)) tiers.set(n, []);
       tiers.get(n).push(v);
     }
-    const out = [];
+    const out = core.sort((a, b) => a.coreOrder - b.coreOrder);
     for (const n of [...tiers.keys()].sort((a, b) => a - b)) {
       out.push(...shuffled(tiers.get(n), rand));
     }
@@ -2621,7 +2630,11 @@ const SUPA_HEADERS = {
             collectionName: c.name,
             // Marks already collected for this clip; drives the running order.
             // Absent until supabase_balancing.sql has been run, which reads as 0.
-            timesAnnotated: Number(v.times_annotated) || 0
+            timesAnnotated: Number(v.times_annotated) || 0,
+            // Position in the hand-picked first set every participant gets
+            // (null = an ordinary, balanced clip). See supabase_core_clips.sql.
+            coreOrder: Number.isFinite(Number(v.core_order)) && v.core_order != null
+              ? Number(v.core_order) : null
           };
         });
       if (clips.length) built.push({ id: c.id, name: c.name, icon: c.icon || '📁', videos: clips });
