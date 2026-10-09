@@ -100,8 +100,8 @@ RED       = "#e8604f"
 AMBER     = "#e0a53d"
 
 STATUS_COLORS = {
-    "waiting":   INK_DIM,
-    "skipped":   INK_DIM,
+    "waiting":   AMBER,                                # new - still to upload
+    "skipped":   INK,                                  # already on the site
     "encoding":  AMBER,
     "uploading": AMBER,
     "saving":    AMBER,
@@ -886,184 +886,399 @@ class Replacer(threading.Thread):
 # ===========================================================================
 #  GUI
 # ===========================================================================
+#  One window, three areas:
+#    * a tab strip - "Recordings" (this laptop) and "On the site" (what
+#      participants are served), each a table you can double-click to play;
+#    * a settings rail on the right;
+#    * an Activity log along the bottom - resizable, timestamped, and also
+#      written to studio_log.txt so nothing scrolls away for good.
+LOG_PATH = ROOT / "studio_log.txt"                     # git-ignored
+PUBLIC_URL = f"{SUPABASE_URL}/storage/v1/object/public/{STORAGE_BUCKET}/"
+
+FONT = "Segoe UI"
+FONT_SEMI = "Segoe UI Semibold"
+MONO = "Consolas"
+ROW_ALT = "#131a1d"                                    # zebra stripe
+HOVER = "#243035"
+
+STATUS_LABEL = {
+    "waiting":   "New",
+    "skipped":   "On site",
+    "encoding":  "Encoding...",
+    "uploading": "Uploading...",
+    "saving":    "Saving...",
+    "done":      "Uploaded",
+    "failed":    "Failed",
+}
+
+
+def open_file(path: Path) -> None:
+    """Open a file in the system's default app (the video player for .mp4)."""
+    import os
+    import sys
+    if sys.platform.startswith("win"):
+        os.startfile(str(path))                        # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
+
+
+def show_in_folder(path: Path) -> None:
+    import sys
+    if sys.platform.startswith("win"):
+        subprocess.Popen(["explorer", "/select,", str(path)])
+    else:
+        open_file(path.parent)
+
+
+def local_files_by_clip(*folders) -> dict[str, dict[str, Path]]:
+    """video_id -> {"encoded": path in the working folder, "source": original}.
+
+    Built from the "site" blocks a sync writes into the stamp files."""
+    out: dict[str, dict[str, Path]] = {}
+    src_dir = Path(folders[0]) if folders and folders[0] else None
+    for clip in crt_local.local_clips(*folders):
+        info = (crt_local.read_stamp(clip.stamp) or {}).get(crt_local.SITE_KEY) or {}
+        vid = info.get("video_id")
+        if not vid or not clip.video.exists():
+            continue
+        kind = "source" if (src_dir and clip.home == src_dir) else "encoded"
+        out.setdefault(vid, {}).setdefault(kind, clip.video)
+    # The encode keeps the recording's file name, so find it in the working
+    # folder even when no stamp was copied beside it.
+    work_dir = Path(folders[1]) if len(folders) > 1 and folders[1] else None
+    if work_dir:
+        for files in out.values():
+            src = files.get("source")
+            if src and "encoded" not in files:
+                for cand in (work_dir / src.name, work_dir / crt_local.TAKEN_DOWN_DIR / src.name):
+                    if cand.exists():
+                        files["encoded"] = cand
+                        break
+    return out
+
+
+class HoverButton(tk.Button):
+    """A flat button that lightens on hover - the one control style used everywhere."""
+    KINDS = {
+        #           bg         hover      fg         font
+        "primary": (TEAL,      "#45c9b4", "#06201b", (FONT_SEMI, 10)),
+        "ghost":   (SURFACE_2, HOVER,     INK,       (FONT, 10)),
+        "danger":  ("#3a1f1c", "#57302b", "#ffb4a8", (FONT, 10)),
+        "link":    (SURFACE,   SURFACE_2, TEAL,      (FONT, 9)),
+    }
+
+    def __init__(self, parent, text, cmd, kind="ghost", **kw):
+        bg, hover, fg, font = self.KINDS[kind]
+        pad = {"padx": 10, "pady": 4} if kind == "link" else {"padx": 16, "pady": 8}
+        super().__init__(parent, text=text, command=cmd, bg=bg, fg=fg, font=font,
+                         activebackground=hover, activeforeground=fg,
+                         disabledforeground="#5b6a6e", relief="flat", bd=0,
+                         highlightthickness=0, cursor="hand2", **pad, **kw)
+        self._bg, self._hover = bg, hover
+        self.bind("<Enter>", lambda _e: self["state"] != "disabled" and self.configure(bg=self._hover))
+        self.bind("<Leave>", lambda _e: self.configure(bg=self._bg))
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("CRT Study Studio")
         self.configure(bg=BG)
-        self.geometry("1060x760")
-        self.minsize(900, 620)
+        self.geometry("1320x860")
+        self.minsize(1040, 680)
 
         self.settings = Settings.load()
         self.clips: list[Clip] = []
         self.events: queue.Queue = queue.Queue()
         self.pipeline: Pipeline | None = None
-        self.library_win: "LibraryWindow | None" = None
+        self.filter = tk.StringVar(value="All")
+        self.search = tk.StringVar()
 
         self._build_style()
         self._build_ui()
         self.after(80, self._drain)
+        self.write_log("Studio started.", "info")
         if Path(self.settings.src_dir).exists():
             self.scan()
+
+    # kept for code that still asks the app for a button
+    def _btn(self, parent, text, cmd, kind="primary"):
+        return HoverButton(parent, text, cmd, kind)
 
     # ---------- theme ----------
     def _build_style(self):
         st = ttk.Style(self)
         st.theme_use("clam")
-        st.configure(".", background=BG, foreground=INK,
-                     fieldbackground=SURFACE_2, borderwidth=0)
+        st.configure(".", background=BG, foreground=INK, fieldbackground=SURFACE_2,
+                     borderwidth=0, font=(FONT, 10))
         st.configure("TFrame", background=BG)
         st.configure("Card.TFrame", background=SURFACE)
-        st.configure("TLabel", background=BG, foreground=INK, font=("Segoe UI", 10))
-        st.configure("Card.TLabel", background=SURFACE, foreground=INK)
-        st.configure("Dim.TLabel", background=BG, foreground=INK_DIM, font=("Segoe UI", 9))
-        st.configure("CardDim.TLabel", background=SURFACE, foreground=INK_DIM,
-                     font=("Segoe UI", 9))
-        st.configure("H1.TLabel", background=BG, foreground=INK,
-                     font=("Segoe UI Semibold", 15))
-        st.configure("H2.TLabel", background=SURFACE, foreground=INK,
-                     font=("Segoe UI Semibold", 10))
-        st.configure("TEntry", fieldbackground=SURFACE_2, foreground=INK,
-                     insertcolor=INK, bordercolor=LINE, lightcolor=LINE,
-                     darkcolor=LINE, padding=6)
-        st.configure("TCheckbutton", background=SURFACE, foreground=INK_DIM)
-        st.map("TCheckbutton", background=[("active", SURFACE)])
-        st.configure("TSpinbox", fieldbackground=SURFACE_2, foreground=INK,
-                     arrowcolor=INK, bordercolor=LINE, padding=4)
+        st.configure("Rail.TFrame", background=SURFACE)
+        st.configure("TLabel", background=BG, foreground=INK, font=(FONT, 10))
+        st.configure("Dim.TLabel", background=BG, foreground=INK_DIM, font=(FONT, 9))
+        st.configure("Card.TLabel", background=SURFACE, foreground=INK, font=(FONT, 10))
+        st.configure("CardDim.TLabel", background=SURFACE, foreground=INK_DIM, font=(FONT, 9))
+        st.configure("Title.TLabel", background=BG, foreground=INK, font=(FONT_SEMI, 17))
+        st.configure("Section.TLabel", background=SURFACE, foreground=INK_DIM,
+                     font=(FONT_SEMI, 8))
+        st.configure("Panel.TLabel", background=SURFACE, foreground=INK, font=(FONT_SEMI, 11))
+        st.configure("TEntry", fieldbackground=SURFACE_2, foreground=INK, insertcolor=INK,
+                     bordercolor=LINE, lightcolor=LINE, darkcolor=LINE, padding=7)
+        st.map("TEntry", bordercolor=[("focus", TEAL)], lightcolor=[("focus", TEAL)])
+        st.configure("TCheckbutton", background=SURFACE, foreground=INK, font=(FONT, 10),
+                     indicatorbackground=SURFACE_2, indicatorforeground=TEAL)
+        st.map("TCheckbutton", background=[("active", SURFACE)],
+               indicatorbackground=[("selected", SURFACE_2)])
+        st.configure("TSpinbox", fieldbackground=SURFACE_2, foreground=INK, arrowcolor=INK,
+                     bordercolor=LINE, lightcolor=LINE, darkcolor=LINE, padding=5)
         st.configure("Treeview", background=SURFACE, fieldbackground=SURFACE,
-                     foreground=INK, rowheight=26, borderwidth=0)
+                     foreground=INK, rowheight=30, borderwidth=0, font=(FONT, 10))
         st.configure("Treeview.Heading", background=SURFACE_2, foreground=INK_DIM,
-                     relief="flat", font=("Segoe UI", 9))
-        st.map("Treeview", background=[("selected", SURFACE_2)])
+                     relief="flat", font=(FONT_SEMI, 9), padding=(8, 7))
+        st.map("Treeview.Heading", background=[("active", HOVER)])
+        st.map("Treeview", background=[("selected", "#1f4a44")],
+               foreground=[("selected", INK)])
+        st.layout("Treeview", [("Treeview.treearea", {"sticky": "nswe"})])   # no border
         st.configure("TProgressbar", background=TEAL, troughcolor=SURFACE_2,
-                     borderwidth=0, thickness=8)
-
-    def _btn(self, parent, text, cmd, kind="primary"):
-        bg = {"primary": TEAL, "ghost": SURFACE_2, "danger": RED}[kind]
-        fg = "#08201c" if kind == "primary" else INK
-        b = tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg,
-                      activebackground=TEAL_DARK if kind == "primary" else LINE,
-                      activeforeground=fg, relief="flat", bd=0,
-                      font=("Segoe UI Semibold", 10), padx=16, pady=9, cursor="hand2")
-        return b
+                     bordercolor=SURFACE_2, lightcolor=TEAL, darkcolor=TEAL,
+                     borderwidth=0, thickness=5)
+        st.configure("Vertical.TScrollbar", background=SURFACE_2, troughcolor=SURFACE,
+                     arrowcolor=INK_DIM, bordercolor=SURFACE, lightcolor=SURFACE_2,
+                     darkcolor=SURFACE_2, gripcount=0, arrowsize=12)
+        st.map("Vertical.TScrollbar", background=[("active", HOVER)])
+        st.configure("TNotebook", background=BG, borderwidth=0, tabmargins=(0, 0, 0, 0),
+                     bordercolor=BG, lightcolor=BG, darkcolor=BG)
+        st.configure("TNotebook.Tab", background=BG, foreground=INK_DIM,
+                     padding=(20, 10), font=(FONT_SEMI, 10), borderwidth=0,
+                     bordercolor=BG, lightcolor=BG, darkcolor=BG, focuscolor=BG)
+        st.map("TNotebook.Tab", background=[("selected", SURFACE), ("active", SURFACE_2)],
+               foreground=[("selected", INK), ("active", INK)],
+               bordercolor=[("selected", SURFACE)], lightcolor=[("selected", SURFACE)],
+               expand=[("selected", (0, 0, 0, 0))])
+        st.configure("TCheckbutton", indicatorcolor=SURFACE_2, indicatorrelief="flat")
+        st.map("TCheckbutton", indicatorcolor=[("selected", TEAL)])
+        st.configure("Seg.TRadiobutton", background=SURFACE, foreground=INK_DIM,
+                     font=(FONT, 9), padding=(10, 4), indicatorsize=0)
+        st.layout("Seg.TRadiobutton", [("Radiobutton.padding", {"sticky": "nswe", "children": [
+            ("Radiobutton.label", {"sticky": "nswe"})]})])
+        st.map("Seg.TRadiobutton", background=[("selected", SURFACE_2), ("active", HOVER)],
+               foreground=[("selected", INK), ("active", INK)])
 
     # ---------- layout ----------
     def _build_ui(self):
-        head = ttk.Frame(self, padding=(18, 14, 18, 8))
+        # ---- header ----
+        head = ttk.Frame(self, padding=(22, 16, 22, 10))
         head.pack(fill="x")
-        ttk.Label(head, text="CRT Study Studio", style="H1.TLabel").pack(side="left")
-        ttk.Label(head, text="  process recordings, then publish them to the study site",
-                  style="Dim.TLabel").pack(side="left", padx=(8, 0))
-        self.badge = ttk.Label(head, text="", style="Dim.TLabel")
-        self.badge.pack(side="right")
+        titles = ttk.Frame(head)
+        titles.pack(side="left")
+        ttk.Label(titles, text="CRT Study Studio", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(titles, text="Process recordings and publish them to the study site",
+                  style="Dim.TLabel").pack(anchor="w")
+        self.chips = ttk.Frame(head)
+        self.chips.pack(side="right")
 
-        body = ttk.Frame(self, padding=(18, 0, 18, 8))
-        body.pack(fill="both", expand=True)
-        body.columnconfigure(0, weight=1)
-        body.columnconfigure(1, minsize=310)
-        body.rowconfigure(0, weight=1)
+        # ---- vertical split: work area above, activity log below ----
+        vsplit = tk.PanedWindow(self, orient="vertical", bg=BG, sashwidth=8,
+                                bd=0, sashrelief="flat", opaqueresize=True)
+        vsplit.pack(fill="both", expand=True, padx=22, pady=(0, 16))
 
-        # ---- clip table ----
-        left = ttk.Frame(body, style="Card.TFrame", padding=1)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+        top = ttk.Frame(vsplit)
+        vsplit.add(top, stretch="always", minsize=320)
+        top.columnconfigure(0, weight=1)
+        top.rowconfigure(0, weight=1)
+
+        self.tabs = ttk.Notebook(top)
+        self.tabs.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
+        self.rec_tab = ttk.Frame(self.tabs, style="Card.TFrame")
+        self.lib_tab = LibraryPanel(self.tabs, self)
+        self.tabs.add(self.rec_tab, text="  Recordings  ")
+        self.tabs.add(self.lib_tab, text="  On the site  ")
+        self.tabs.bind("<<NotebookTabChanged>>", self._tab_changed)
+        self._build_recordings(self.rec_tab)
+
+        rail = ttk.Frame(top, style="Rail.TFrame", padding=(18, 16, 18, 18), width=320)
+        rail.grid(row=0, column=1, sticky="nsew")
+        rail.grid_propagate(False)
+        self._build_rail(rail)
+
+        log_area = ttk.Frame(vsplit, style="Card.TFrame")
+        vsplit.add(log_area, stretch="never", minsize=120, height=210)
+        self._build_log(log_area)
+
+    def _build_recordings(self, parent):
+        bar = ttk.Frame(parent, style="Card.TFrame", padding=(14, 12, 14, 10))
+        bar.pack(fill="x")
+        seg = ttk.Frame(bar, style="Card.TFrame")
+        seg.pack(side="left")
+        for name in ("All", "New", "On site", "Failed"):
+            ttk.Radiobutton(seg, text=name, value=name, variable=self.filter,
+                            style="Seg.TRadiobutton",
+                            command=self._fill_recordings).pack(side="left", padx=(0, 2))
+        ent = ttk.Entry(bar, textvariable=self.search, width=28)
+        ent.pack(side="left", padx=(14, 0))
+        self._placeholder(ent, self.search, "Search name or site name")
+        self.search.trace_add("write", lambda *_: self._fill_recordings())
+        HoverButton(bar, "Rescan", self.scan, "ghost").pack(side="right")
+        HoverButton(bar, "Show in folder", self._show_selected, "ghost").pack(side="right", padx=6)
+        HoverButton(bar, "Play", self._play_selected, "primary").pack(side="right")
+
+        ttk.Label(parent, text="Double-click a recording to play it (with the green "
+                               "release flash, as participants see it, once it has been "
+                               "encoded). Right-click for more.",
+                  style="CardDim.TLabel").pack(anchor="w", padx=14, pady=(0, 8))
+
+        wrap = ttk.Frame(parent, style="Card.TFrame")
+        wrap.pack(fill="both", expand=True, padx=1, pady=(0, 1))
         cols = ("name", "site", "frames", "release", "status", "note")
-        self.tree = ttk.Treeview(left, columns=cols, show="headings", selectmode="none")
+        self.tree = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="browse")
         for cid, label, w, anchor in (
-            ("name", "Clip", 230, "w"),
-            # Filled in once the row is saved: what participants see it called.
+            ("name", "Recording", 260, "w"),
             ("site", "Site name", 110, "w"),
-            ("frames", "Frames", 70, "center"),
-            ("release", "Release", 70, "center"), ("status", "Status", 90, "w"),
-            ("note", "Detail", 170, "w"),
+            ("frames", "Frames", 80, "center"),
+            ("release", "Release frame", 110, "center"),
+            ("status", "Status", 110, "w"),
+            ("note", "Detail", 200, "w"),
         ):
-            self.tree.heading(cid, text=label)
-            self.tree.column(cid, width=w, anchor=anchor,
-                             stretch=(cid in ("name", "note")))
-        vsb = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
+            self.tree.heading(cid, text=label, anchor=anchor)
+            self.tree.column(cid, width=w, anchor=anchor, stretch=(cid in ("name", "note")))
+        vsb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
         for status, colour in STATUS_COLORS.items():
             self.tree.tag_configure(status, foreground=colour)
+        self.tree.tag_configure("alt", background=ROW_ALT)
+        self.tree.bind("<Double-1>", lambda e: self._play_selected())
+        self.tree.bind("<Return>", lambda e: self._play_selected())
+        self.tree.bind("<Button-3>", self._rec_menu)
 
-        # ---- settings ----
-        side = ttk.Frame(body, style="Card.TFrame", padding=16)
-        side.grid(row=0, column=1, sticky="nsew")
-        side.columnconfigure(0, weight=1)
+        self.empty_lbl = ttk.Label(wrap, text="", style="CardDim.TLabel")
 
-        def section(text, pady=(0, 6)):
-            ttk.Label(side, text=text, style="H2.TLabel").pack(anchor="w", pady=pady)
+    def _build_rail(self, rail):
+        def section(text, top=0):
+            ttk.Label(rail, text=text.upper(), style="Section.TLabel").pack(
+                anchor="w", pady=(top, 6))
 
-        section("Source folder")
+        section("Source recordings")
         self.src_var = tk.StringVar(value=self.settings.src_dir)
-        ttk.Entry(side, textvariable=self.src_var).pack(fill="x")
-        row = ttk.Frame(side, style="Card.TFrame")
-        row.pack(fill="x", pady=(6, 14))
-        self._btn(row, "Choose...", self.choose_src, "ghost").pack(side="left")
-        self._btn(row, "Rescan", self.scan, "ghost").pack(side="left", padx=6)
+        self._path_row(rail, self.src_var, self.choose_src)
 
-        section("Working folder (encoded output)")
+        section("Working folder (encoded)", 14)
         self.work_var = tk.StringVar(value=self.settings.work_dir)
-        ttk.Entry(side, textvariable=self.work_var).pack(fill="x")
-        self._btn(side, "Choose...", self.choose_work, "ghost").pack(anchor="w", pady=(6, 14))
+        self._path_row(rail, self.work_var, self.choose_work)
 
-        section("Supabase service_role key")
+        section("Supabase service key", 14)
         self.key_var = tk.StringVar(value=self.settings.service_key)
-        ttk.Entry(side, textvariable=self.key_var, show="*").pack(fill="x")
-        ttk.Label(side, text="Saved locally in studio_config.json (git-ignored).\n"
-                             "Never put this key in index.html.",
-                  style="CardDim.TLabel", wraplength=270,
-                  justify="left").pack(anchor="w", pady=(5, 14))
+        ttk.Entry(rail, textvariable=self.key_var, show="•").pack(fill="x")
+        ttk.Label(rail, text="Saved in studio_config.json on this laptop only.",
+                  style="CardDim.TLabel").pack(anchor="w", pady=(4, 0))
 
-        section("Clips per collection")
+        section("Upload options", 14)
+        row = ttk.Frame(rail, style="Card.TFrame")
+        row.pack(fill="x", pady=(0, 6))
+        ttk.Label(row, text="Clips per collection", style="Card.TLabel").pack(side="left")
         self.per_var = tk.IntVar(value=self.settings.per_collection)
-        ttk.Spinbox(side, from_=1, to=100, textvariable=self.per_var,
-                    width=6).pack(anchor="w", pady=(0, 14))
-
+        ttk.Spinbox(row, from_=1, to=100, textvariable=self.per_var, width=5).pack(side="right")
         self.flash_var = tk.BooleanVar(value=self.settings.add_flash)
-        ttk.Checkbutton(side, text="Add green release flash",
-                        variable=self.flash_var).pack(anchor="w")
+        ttk.Checkbutton(rail, text="Add green release flash",
+                        variable=self.flash_var).pack(anchor="w", pady=2)
         self.skip_var = tk.BooleanVar(value=self.settings.skip_existing)
-        ttk.Checkbutton(side, text="Skip clips already on the site",
-                        variable=self.skip_var).pack(anchor="w", pady=(0, 16))
+        ttk.Checkbutton(rail, text="Skip clips already on the site",
+                        variable=self.skip_var).pack(anchor="w", pady=2)
 
-        self.go_btn = self._btn(side, "Process & Upload", self.start)
-        self.go_btn.pack(fill="x")
-        self.cancel_btn = self._btn(side, "Cancel", self.stop, "danger")
+        spacer = ttk.Frame(rail, style="Card.TFrame")
+        spacer.pack(fill="both", expand=True)
 
-        # Everything already on the site: what each clip is called there, which
-        # file it came from, and how to take a bad one down or swap it out.
-        self._btn(side, "Published clips...", self.open_library, "ghost").pack(
-            fill="x", pady=(8, 0))
-        # Site names into the stamp files, taken-down clips into taken_down/,
-        # and clip_names.csv - run it any time; it only changes what is out of
-        # step with the site.
-        self._btn(side, "Sync names & folders", self.sync_local, "ghost").pack(
-            fill="x", pady=(8, 0))
+        self.go_btn = HoverButton(rail, "Process & Upload", self.start, "primary")
+        self.go_btn.pack(fill="x", side="bottom")
+        self.cancel_btn = HoverButton(rail, "Cancel", self.stop, "danger")
+        HoverButton(rail, "Sync names & folders", self.sync_local, "ghost").pack(
+            fill="x", side="bottom", pady=(0, 8))
 
-        # ---- progress + log ----
-        foot = ttk.Frame(self, padding=(18, 0, 18, 16))
-        foot.pack(fill="x")
-        self.progress = ttk.Progressbar(foot, mode="determinate", maximum=100)
-        self.progress.pack(fill="x")
-        self.progress_lbl = ttk.Label(foot, text="Idle", style="Dim.TLabel")
-        self.progress_lbl.pack(anchor="w", pady=(5, 8))
+    def _path_row(self, parent, var, choose):
+        row = ttk.Frame(parent, style="Card.TFrame")
+        row.pack(fill="x")
+        ttk.Entry(row, textvariable=var).pack(side="left", fill="x", expand=True)
+        HoverButton(row, "Browse", choose, "ghost").pack(side="left", padx=(6, 0))
 
-        self.log = tk.Text(foot, height=9, bg=SURFACE, fg=INK_DIM, relief="flat",
-                           font=("Consolas", 9), wrap="word", padx=12, pady=10,
-                           insertbackground=INK)
-        self.log.pack(fill="x")
+    def _build_log(self, parent):
+        bar = ttk.Frame(parent, style="Card.TFrame", padding=(14, 10, 14, 6))
+        bar.pack(fill="x")
+        ttk.Label(bar, text="Activity", style="Panel.TLabel").pack(side="left")
+        self.progress_lbl = ttk.Label(bar, text="Idle", style="CardDim.TLabel")
+        self.progress_lbl.pack(side="left", padx=(12, 0))
+        HoverButton(bar, "Open log file", lambda: LOG_PATH.exists() and open_file(LOG_PATH),
+                    "link").pack(side="right")
+        HoverButton(bar, "Copy", self._copy_log, "link").pack(side="right")
+        HoverButton(bar, "Clear", self._clear_log, "link").pack(side="right")
+        self.progress = ttk.Progressbar(parent, mode="determinate", maximum=100)
+        self.progress.pack(fill="x", padx=14)
+
+        body = ttk.Frame(parent, style="Card.TFrame")
+        body.pack(fill="both", expand=True, padx=(14, 4), pady=(8, 10))
+        self.log = tk.Text(body, bg=SURFACE, fg=INK_DIM, relief="flat", bd=0,
+                           font=(MONO, 10), wrap="word", padx=4, pady=2,
+                           insertbackground=INK, highlightthickness=0, spacing1=2)
+        lsb = ttk.Scrollbar(body, orient="vertical", command=self.log.yview)
+        self.log.configure(yscrollcommand=lsb.set)
+        self.log.pack(side="left", fill="both", expand=True)
+        lsb.pack(side="right", fill="y")
         for tone, colour in (("info", INK_DIM), ("good", GREEN),
                              ("warn", AMBER), ("error", RED)):
             self.log.tag_configure(tone, foreground=colour)
+        self.log.tag_configure("time", foreground="#5b6a6e")
         self.log.configure(state="disabled")
 
         if not have_ffmpeg():
-            self.write_log("ffmpeg/ffprobe not found on PATH - encoding will fail.", "error")
+            self.after(10, lambda: self.write_log(
+                "ffmpeg/ffprobe not found on PATH - encoding will fail.", "error"))
         if not HAS_CV2:
-            self.write_log("opencv-python not installed - the green flash is disabled.", "warn")
+            self.after(10, lambda: self.write_log(
+                "opencv-python not installed - the green flash is disabled.", "warn"))
 
-    # ---------- actions ----------
+    def _placeholder(self, entry, var, text):
+        """Grey hint text in an empty entry (tk has none built in)."""
+        def show(_e=None):
+            if not var.get():
+                entry.configure(foreground=INK_DIM)
+                entry.insert(0, text)
+                entry._ph = True
+        def hide(_e=None):
+            if getattr(entry, "_ph", False):
+                entry.delete(0, "end")
+                entry.configure(foreground=INK)
+                entry._ph = False
+        entry.bind("<FocusIn>", hide)
+        entry.bind("<FocusOut>", show)
+        entry._ph_text = text
+        show()
+
+    def _query(self) -> str:
+        q = self.search.get().strip().lower()
+        return "" if q == "search name or site name" else q
+
+    # ---------- header chips ----------
+    def _set_chips(self):
+        for w in self.chips.winfo_children():
+            w.destroy()
+        n = len(self.clips)
+        on_site = sum(1 for c in self.clips if c.status in ("skipped", "done"))
+        new = sum(1 for c in self.clips if c.status == "waiting")
+        failed = sum(1 for c in self.clips if c.status == "failed")
+        for label, value, colour in (("recordings", n, INK), ("on the site", on_site, TEAL),
+                                     ("new", new, AMBER), ("failed", failed, RED)):
+            if label == "failed" and not failed:
+                continue
+            chip = tk.Frame(self.chips, bg=SURFACE, padx=14, pady=7)
+            chip.pack(side="left", padx=(8, 0))
+            tk.Label(chip, text=str(value), bg=SURFACE, fg=colour,
+                     font=(FONT_SEMI, 13)).pack(side="left")
+            tk.Label(chip, text=" " + label, bg=SURFACE, fg=INK_DIM,
+                     font=(FONT, 9)).pack(side="left", pady=(3, 0))
+
+    # ---------- recordings ----------
     def choose_src(self):
         d = filedialog.askdirectory(title="Folder with recordings + .stamp.json",
                                     initialdir=self.src_var.get() or ROOT)
@@ -1076,14 +1291,14 @@ class App(tk.Tk):
                                     initialdir=self.work_var.get() or ROOT)
         if d:
             self.work_var.set(d)
+            self.scan()
 
     def scan(self):
         folder = Path(self.src_var.get())
-        self.tree.delete(*self.tree.get_children())
         self.clips.clear()
         if not folder.exists():
             self.write_log(f"Folder not found: {folder}", "error")
-            self.badge.configure(text="")
+            self._fill_recordings()
             return
 
         for stamp in sorted(folder.glob("*.stamp.json")):
@@ -1091,41 +1306,128 @@ class App(tk.Tk):
             if video.exists():
                 self.clips.append(Clip.load(video, stamp))
 
-        # Mark what the ledger already knows about, so the table shows at a
-        # glance which clips are new before anything is run.
+        # Already on the site? The ledger knows, and so does the "site" block a
+        # sync writes into the stamp - either is enough.
         ledger = load_ledger(self.work_var.get())
         for clip in self.clips:
-            # The site's own name for it, written into the stamp by a sync.
-            clip.site_title = crt_local.site_title_of(clip.stamp)
-            if clip.status == "waiting" and clip.name in ledger:
+            info = (crt_local.read_stamp(clip.stamp) or {}).get(crt_local.SITE_KEY) or {}
+            clip.site_title = str(info.get("title") or "")
+            if clip.status != "waiting":
+                continue
+            if clip.name in ledger:
                 parts = ledger[clip.name].split("\t")
-                where = f"{parts[2]} #{parts[3]}" if len(parts) > 3 else "already published"
-                clip.status, clip.note = "skipped", where
-                # Recover the site name from the ledger (name, frames,
-                # collection, number, when), so a clip published in an earlier
-                # run still shows what participants call it.
+                clip.status = "skipped"
+                clip.note = f"{parts[2]} #{parts[3]}" if len(parts) > 3 else "already published"
                 if (not clip.site_title and len(parts) > 3
                         and str(parts[3]).strip().isdigit()):
                     clip.site_title = site_name(parts[2], int(parts[3]))
+            elif info.get("video_id"):
+                clip.status = "skipped"
+                clip.note = f"{info.get('collection_id')} #{info.get('video_number')}"
 
-        for clip in self.clips:
-            self.tree.insert("", "end", iid=clip.name, tags=(clip.status,), values=(
-                clip.name,
-                clip.site_title or "-",
-                clip.frame_count or "-",
-                clip.stamped_frame if clip.stamped_frame is not None else "-",
-                clip.status, clip.note,
-            ))
-        n = len(self.clips)
+        self._fill_recordings()
         new = sum(1 for c in self.clips if c.status == "waiting")
-        self.badge.configure(text=f"{n} clip{'s' if n != 1 else ''}  ·  {new} new")
-        self.write_log(f"Found {n} clip(s) in {folder} - {new} not yet published.")
+        self.write_log(f"Found {len(self.clips)} recording(s) in {folder} - "
+                       f"{new} not yet on the site.")
 
+    def _row_values(self, clip: Clip):
+        return (clip.name, clip.site_title or "—", clip.frame_count or "—",
+                clip.stamped_frame if clip.stamped_frame is not None else "—",
+                STATUS_LABEL.get(clip.status, clip.status), clip.note)
+
+    def _fill_recordings(self):
+        want = self.filter.get()
+        q = self._query()
+        self.tree.delete(*self.tree.get_children())
+        shown = 0
+        for clip in self.clips:
+            label = STATUS_LABEL.get(clip.status, clip.status)
+            if want == "New" and clip.status != "waiting":
+                continue
+            if want == "On site" and clip.status not in ("skipped", "done"):
+                continue
+            if want == "Failed" and clip.status != "failed":
+                continue
+            if q and q not in f"{clip.name} {clip.site_title} {label}".lower():
+                continue
+            tags = (clip.status,) + (("alt",) if shown % 2 else ())
+            self.tree.insert("", "end", iid=clip.name, tags=tags, values=self._row_values(clip))
+            shown += 1
+        if shown:
+            self.empty_lbl.place_forget()
+        else:
+            self.empty_lbl.configure(text="No recordings match." if self.clips else
+                                     "No recordings with a .stamp.json found in the source folder.")
+            self.empty_lbl.place(relx=.5, rely=.35, anchor="center")
+        self._set_chips()
+
+    def update_row(self, clip: Clip):
+        if self.tree.exists(clip.name):
+            alt = ("alt",) if "alt" in self.tree.item(clip.name, "tags") else ()
+            self.tree.item(clip.name, tags=(clip.status,) + alt, values=self._row_values(clip))
+        self._set_chips()
+
+    def _selected_clip(self) -> Clip | None:
+        sel = self.tree.selection()
+        return next((c for c in self.clips if sel and c.name == sel[0]), None)
+
+    def _encoded_of(self, clip: Clip) -> Path | None:
+        p = Path(self.work_var.get()) / clip.name
+        return p if p.exists() else None
+
+    def _play(self, path: Path | None, what: str):
+        if not path or not path.exists():
+            messagebox.showinfo("Nothing to play", f"No {what} file found.", parent=self)
+            return
+        try:
+            open_file(path)
+            self.write_log(f"Playing {path.name} ({what}).")
+        except Exception as exc:
+            messagebox.showerror("Could not play it", str(exc), parent=self)
+
+    def _play_selected(self):
+        clip = self._selected_clip()
+        if not clip:
+            return
+        enc = self._encoded_of(clip)
+        if enc:
+            self._play(enc, "encoded, as on the site")
+        else:
+            self._play(clip.video, "original recording")
+
+    def _show_selected(self):
+        clip = self._selected_clip()
+        if clip:
+            show_in_folder(clip.video)
+
+    def _rec_menu(self, event):
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return
+        self.tree.selection_set(iid)
+        clip = self._selected_clip()
+        enc = self._encoded_of(clip)
+        m = tk.Menu(self, tearoff=0, bg=SURFACE_2, fg=INK, activebackground=TEAL_DARK,
+                    activeforeground=INK, bd=0, font=(FONT, 10))
+        m.add_command(label="Play encoded (with flash, as on the site)",
+                      command=lambda: self._play(enc, "encoded"),
+                      state="normal" if enc else "disabled")
+        m.add_command(label="Play original recording",
+                      command=lambda: self._play(clip.video, "original recording"))
+        m.add_separator()
+        m.add_command(label="Show in folder", command=lambda: show_in_folder(clip.video))
+        m.add_command(label="Open stamp file", command=lambda: open_file(clip.stamp))
+        m.tk_popup(event.x_root, event.y_root)
+
+    # ---------- run ----------
     def gather(self) -> Settings:
         s = self.settings
         s.src_dir, s.work_dir = self.src_var.get(), self.work_var.get()
         s.service_key = self.key_var.get().strip()
-        s.per_collection = max(1, int(self.per_var.get() or 10))
+        try:
+            s.per_collection = max(1, int(self.per_var.get() or 10))
+        except (tk.TclError, ValueError):
+            s.per_collection = 10
         s.add_flash, s.skip_existing = self.flash_var.get(), self.skip_var.get()
         s.save()
         return s
@@ -1151,10 +1453,11 @@ class App(tk.Tk):
         for clip in self.clips:                        # reset for a fresh run
             if clip.status in ("done", "failed", "skipped"):
                 clip.status, clip.note = "waiting", ""
-                self.update_row(clip)
+        self.filter.set("All")
+        self._fill_recordings()
 
         self.go_btn.pack_forget()
-        self.cancel_btn.pack(fill="x")
+        self.cancel_btn.pack(fill="x", side="bottom")
         self.progress.configure(value=0)
         self.pipeline = Pipeline(self.clips, s, self.events)
         self.pipeline.start()
@@ -1163,48 +1466,6 @@ class App(tk.Tk):
         if self.pipeline:
             self.pipeline.cancel.set()
             self.write_log("Cancelling after the current clip...", "warn")
-
-    # ---------- event pump ----------
-    def update_row(self, clip: Clip):
-        if self.tree.exists(clip.name):
-            self.tree.item(clip.name, tags=(clip.status,), values=(
-                clip.name,
-                clip.site_title or "-",
-                clip.frame_count or "-",
-                clip.stamped_frame if clip.stamped_frame is not None else "-",
-                clip.status, clip.note,
-            ))
-
-    def write_log(self, msg: str, tone: str = "info"):
-        self.log.configure(state="normal")
-        self.log.insert("end", msg + "\n", tone)
-        self.log.see("end")
-        self.log.configure(state="disabled")
-
-    def _drain(self):
-        try:
-            while True:
-                ev = self.events.get_nowait()
-                kind = ev["kind"]
-                if kind == "log":
-                    self.write_log(ev["msg"], ev.get("tone", "info"))
-                elif kind == "row":
-                    self.update_row(ev["clip"])
-                elif kind == "progress":
-                    self.progress.configure(value=ev["value"])
-                    self.progress_lbl.configure(text=ev["text"])
-                elif kind == "finished":
-                    self.cancel_btn.pack_forget()
-                    self.go_btn.pack(fill="x")
-                    self.progress_lbl.configure(
-                        text="Done" if ev.get("ok") else "Finished with errors")
-                elif kind == "replaced":
-                    self.scan()                # the old recording may have moved
-                    if self.library_win and self.library_win.winfo_exists():
-                        self.library_win.refresh()
-        except queue.Empty:
-            pass
-        self.after(80, self._drain)
 
     def sync_local(self):
         if self.pipeline and self.pipeline.is_alive():
@@ -1219,189 +1480,281 @@ class App(tk.Tk):
         self.update_idletasks()
         run_sync(Supabase(s.service_key), s, self.write_log)
         self.scan()
+        self.lib_tab.refresh(quiet=True)
 
-    # ---------- library ----------
-    def open_library(self):
-        if self.library_win and self.library_win.winfo_exists():
-            self.library_win.lift()
-            self.library_win.focus_force()
-            return
-        if not self.key_var.get().strip():
-            messagebox.showwarning(
-                "Service key needed",
-                "Paste the Supabase service_role key first - managing published "
-                "clips needs write access.")
-            return
-        self.settings = self.gather()
-        self.settings.save()
-        self.library_win = LibraryWindow(self)
+    # ---------- log ----------
+    def write_log(self, msg: str, tone: str = "info"):
+        from datetime import datetime
+        now = datetime.now()
+        self.log.configure(state="normal")
+        self.log.insert("end", now.strftime("%H:%M:%S  "), "time")
+        self.log.insert("end", msg + "\n", tone)
+        self.log.see("end")
+        self.log.configure(state="disabled")
+        try:
+            with LOG_PATH.open("a", encoding="utf-8") as fh:
+                fh.write(f"{now:%Y-%m-%d %H:%M:%S}  [{tone}]  {msg}\n")
+        except Exception:
+            pass
+
+    def _clear_log(self):
+        self.log.configure(state="normal")
+        self.log.delete("1.0", "end")
+        self.log.configure(state="disabled")
+
+    def _copy_log(self):
+        self.clipboard_clear()
+        self.clipboard_append(self.log.get("1.0", "end"))
+        self.progress_lbl.configure(text="Log copied to the clipboard")
+
+    # ---------- event pump ----------
+    def _drain(self):
+        try:
+            while True:
+                ev = self.events.get_nowait()
+                kind = ev["kind"]
+                if kind == "log":
+                    self.write_log(ev["msg"], ev.get("tone", "info"))
+                elif kind == "row":
+                    self.update_row(ev["clip"])
+                elif kind == "progress":
+                    self.progress.configure(value=ev["value"])
+                    self.progress_lbl.configure(text=ev["text"])
+                elif kind == "finished":
+                    self.cancel_btn.pack_forget()
+                    self.go_btn.pack(fill="x", side="bottom")
+                    self.progress_lbl.configure(
+                        text="Done" if ev.get("ok") else "Finished with errors")
+                    self.lib_tab.loaded = False        # new clips on the site
+                elif kind == "replaced":
+                    self.scan()                        # the old recording may have moved
+                    self.lib_tab.refresh(quiet=True)
+        except queue.Empty:
+            pass
+        self.after(80, self._drain)
+
+    def _tab_changed(self, _e=None):
+        if self.tabs.select() == str(self.lib_tab) and not self.lib_tab.loaded:
+            self.lib_tab.refresh()
 
 
 # ===========================================================================
-#  Library window - take a clip down, put one back, or swap in a fixed file
+#  "On the site" tab - every published clip: play it, take it down, put it
+#  back, or swap in a corrected file
 # ===========================================================================
-class LibraryWindow(tk.Toplevel):
-    def __init__(self, app: "App"):
-        super().__init__(app)
+class LibraryPanel(ttk.Frame):
+    def __init__(self, parent, app: "App"):
+        super().__init__(parent, style="Card.TFrame")
         self.app = app
         self.rows: list[dict] = []
-        self.recordings: dict[str, str] = {}
-        self.title("Published clips")
-        self.configure(bg=BG)
-        self.geometry("1020x560")
-        self.minsize(820, 420)
+        self.files: dict[str, dict[str, Path]] = {}
+        self.loaded = False
+        self.query = tk.StringVar()
+        self.show = tk.StringVar(value="All")
         self._build()
-        self.refresh()
 
     # ---------- layout ----------
     def _build(self):
-        head = ttk.Frame(self, padding=(16, 14, 16, 6))
-        head.pack(fill="x")
-        ttk.Label(head, text="Published clips", style="H1.TLabel").pack(side="left")
-        self.count_lbl = ttk.Label(head, text="", style="Dim.TLabel")
-        self.count_lbl.pack(side="left", padx=(10, 0))
-
-        note = ttk.Frame(self, padding=(16, 0, 16, 8))
-        note.pack(fill="x")
-        ttk.Label(
-            note,
-            text="Retiring takes a clip off the site and keeps every mark recorded "
-                 "against it. Deleting would destroy those marks, so it is offered "
-                 "only for a clip nothing has marked yet.",
-            style="Dim.TLabel", wraplength=960, justify="left").pack(anchor="w")
-
-        # A report names the clip the way the SITE does ("CRT Test 07"), so the
-        # first thing this window has to do is turn that into a row.
-        find = ttk.Frame(self, padding=(16, 0, 16, 8))
-        find.pack(fill="x")
-        ttk.Label(find, text="Find:", style="Dim.TLabel").pack(side="left")
-        self.query = tk.StringVar()
-        ent = ttk.Entry(find, textvariable=self.query, width=34)
-        ent.pack(side="left", padx=(8, 8))
+        bar = ttk.Frame(self, style="Card.TFrame", padding=(14, 12, 14, 10))
+        bar.pack(fill="x")
+        seg = ttk.Frame(bar, style="Card.TFrame")
+        seg.pack(side="left")
+        for name in ("All", "Live", "Taken down"):
+            ttk.Radiobutton(seg, text=name, value=name, variable=self.show,
+                            style="Seg.TRadiobutton", command=self._fill).pack(side="left", padx=(0, 2))
+        ent = ttk.Entry(bar, textvariable=self.query, width=28)
+        ent.pack(side="left", padx=(14, 0))
+        self.app._placeholder(ent, self.query, "Find: CRT 1-07, 7, or file name")
         self.query.trace_add("write", lambda *_a: self._fill())
-        ttk.Label(find, text="clip number, site name or file - e.g. \"CRT 1-07\" or just 7",
-                  style="Dim.TLabel").pack(side="left")
+        self.count_lbl = ttk.Label(bar, text="", style="CardDim.TLabel")
+        self.count_lbl.pack(side="left", padx=(14, 0))
+        HoverButton(bar, "Refresh", self.refresh, "ghost").pack(side="right")
 
-        wrap = ttk.Frame(self, style="Card.TFrame", padding=1)
-        wrap.pack(fill="both", expand=True, padx=16)
-        cols = ("num", "coll", "title", "recording", "file", "marks", "state")
+        ttk.Label(self, text="Double-click a clip to play it. Taking a clip down keeps "
+                             "every mark made on it; deleting is only offered for clips "
+                             "nobody has marked.",
+                  style="CardDim.TLabel").pack(anchor="w", padx=14, pady=(0, 8))
+
+        wrap = ttk.Frame(self, style="Card.TFrame")
+        wrap.pack(fill="both", expand=True, padx=1)
+        cols = ("site", "coll", "num", "recording", "marks", "state")
         self.tree = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="browse")
         for cid, label, w, anchor in (
-            ("num", "#", 50, "center"), ("coll", "Collection", 110, "w"),
-            ("title", "Site name", 110, "w"),
-            ("recording", "Recording on this laptop", 250, "w"),
-            ("file", "File on the site", 200, "w"),
-            ("marks", "Marks", 70, "center"), ("state", "State", 110, "w"),
+            ("site", "Site name", 110, "w"), ("coll", "Collection", 100, "w"),
+            ("num", "#", 50, "center"), ("recording", "Recording", 300, "w"),
+            ("marks", "Marks", 80, "center"), ("state", "State", 110, "w"),
         ):
-            self.tree.heading(cid, text=label)
-            self.tree.column(cid, width=w, anchor=anchor,
-                             stretch=(cid in ("recording", "file")))
+            self.tree.heading(cid, text=label, anchor=anchor)
+            self.tree.column(cid, width=w, anchor=anchor, stretch=(cid == "recording"))
         vsb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
         self.tree.tag_configure("live", foreground=INK)
-        self.tree.tag_configure("retired", foreground=INK_DIM)
+        self.tree.tag_configure("retired", foreground="#6f8085")
+        self.tree.tag_configure("alt", background=ROW_ALT)
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self._sync_buttons())
+        self.tree.bind("<Double-1>", lambda _e: self.play())
+        self.tree.bind("<Return>", lambda _e: self.play())
+        self.tree.bind("<Button-3>", self._menu)
+        self.empty_lbl = ttk.Label(wrap, text="", style="CardDim.TLabel")
 
-        bar = ttk.Frame(self, padding=(16, 10, 16, 14))
-        bar.pack(fill="x")
-        self.app._btn(bar, "Refresh", self.refresh, "ghost").pack(side="left")
-        self.retire_btn = self.app._btn(bar, "Take down", self.retire, "danger")
-        self.retire_btn.pack(side="left", padx=6)
-        self.restore_btn = self.app._btn(bar, "Put back", self.restore, "ghost")
-        self.restore_btn.pack(side="left", padx=6)
-        self.replace_btn = self.app._btn(bar, "Replace file...", self.replace, "primary")
-        self.replace_btn.pack(side="left", padx=6)
-        self.delete_btn = self.app._btn(bar, "Delete permanently", self.delete, "danger")
-        self.delete_btn.pack(side="left", padx=6)
-        self.status = ttk.Label(bar, text="", style="Dim.TLabel")
-        self.status.pack(side="right")
+        acts = ttk.Frame(self, style="Card.TFrame", padding=(14, 10, 14, 12))
+        acts.pack(fill="x")
+        self.play_btn = HoverButton(acts, "Play", self.play, "primary")
+        self.play_btn.pack(side="left")
+        self.replace_btn = HoverButton(acts, "Replace file...", self.replace, "ghost")
+        self.replace_btn.pack(side="left", padx=(8, 0))
+        self.restore_btn = HoverButton(acts, "Put back", self.restore, "ghost")
+        self.restore_btn.pack(side="left", padx=(8, 0))
+        self.retire_btn = HoverButton(acts, "Take down", self.retire, "danger")
+        self.retire_btn.pack(side="left", padx=(8, 0))
+        self.delete_btn = HoverButton(acts, "Delete permanently", self.delete, "danger")
+        self.delete_btn.pack(side="right")
+        self._sync_buttons()
 
     # ---------- data ----------
     def _sb(self) -> Supabase:
         return Supabase(self.app.key_var.get().strip())
 
-    def refresh(self):
-        self.status.configure(text="Loading...")
+    def refresh(self, quiet: bool = False):
+        if not self.app.key_var.get().strip():
+            if not quiet:
+                self._empty("Paste the Supabase service key (right) to see the clips on the site.")
+            return
+        self.count_lbl.configure(text="Loading...")
         self.update_idletasks()
         try:
             self.rows = self._sb().library()
         except Exception as exc:
-            self.status.configure(text="")
-            messagebox.showerror("Could not load", str(exc), parent=self)
+            self.count_lbl.configure(text="")
+            if not quiet:
+                self.app.write_log(f"Could not load the site's clips: {exc}", "error")
+                self._empty("Could not reach Supabase - see Activity below.")
             return
-        # Which recording each clip is, from the stamps a sync has labelled.
-        self.recordings = crt_local.recording_names(self.app.src_var.get(),
-                                                    self.app.work_var.get())
+        self.files = local_files_by_clip(self.app.src_var.get(), self.app.work_var.get())
+        self.loaded = True
         self._fill()
-        live = sum(1 for r in self.rows if r.get("active") is not False)
-        retired = len(self.rows) - live
-        self.count_lbl.configure(
-            text=f"{live} live, {retired} retired"
-                 + ("" if self.rows and self.rows[0].get("marks_known", True)
-                    else "   (mark counts need supabase_retire_clips.sql)"))
-        self.status.configure(text="")
+
+    def _empty(self, text):
+        self.tree.delete(*self.tree.get_children())
+        self.empty_lbl.configure(text=text)
+        self.empty_lbl.place(relx=.5, rely=.35, anchor="center")
+
+    def _recording(self, row) -> str:
+        f = self.files.get(row.get("id"), {})
+        p = f.get("source") or f.get("encoded")
+        return p.name if p else (row.get("storage_path") or "")
 
     def _matches(self, row: dict, q: str) -> bool:
-        if not q:
+        if not q or q.startswith("find:"):
             return True
         num = str(row.get("video_number", ""))
-        # A bare number means the CLIP number and nothing else. Falling back to
-        # a substring search would make "8" also match every clip whose
-        # filename happens to contain an 8 - which, with date-stamped names
-        # like 2026-08-16_..., is most of them.
+        # A bare number means the CLIP number and nothing else - date-stamped
+        # filenames contain digits everywhere.
         if q.isdigit():
             return q.lstrip("0") == num.lstrip("0")
         hay = " ".join(str(row.get(k) or "") for k in
                        ("video_number", "title", "storage_path", "collection_id")).lower()
-        hay += " " + self.recordings.get(row.get("id"), "").lower()
-        return q in hay
+        return q in hay + " " + self._recording(row).lower()
 
     def _fill(self):
         q = self.query.get().strip().lower()
+        want = self.show.get()
         self.tree.delete(*self.tree.get_children())
+        shown = 0
         for row in self.rows:
+            active = row.get("active") is not False
+            if (want == "Live" and not active) or (want == "Taken down" and active):
+                continue
             if not self._matches(row, q):
                 continue
-            active = row.get("active") is not False
             marks = row.get("marks")
-            self.tree.insert(
-                "", "end", iid=row["id"], tags=("live" if active else "retired",),
-                values=(
-                    row.get("video_number", "-"),
-                    row.get("collection_id", "-"),
-                    row.get("title", "-"),
-                    self.recordings.get(row.get("id"), "-"),
-                    row.get("storage_path", "-"),
-                    "?" if marks is None else marks,
-                    "live" if active else "retired",
-                ))
+            tags = ("live" if active else "retired",) + (("alt",) if shown % 2 else ())
+            self.tree.insert("", "end", iid=row["id"], tags=tags, values=(
+                row.get("title") or "—", row.get("collection_id") or "—",
+                row.get("video_number", "—"), self._recording(row),
+                "?" if marks is None else marks,
+                "Live" if active else "Taken down"))
+            shown += 1
+        live = sum(1 for r in self.rows if r.get("active") is not False)
+        self.count_lbl.configure(
+            text=f"{live} live · {len(self.rows) - live} taken down"
+                 + ("" if not self.rows or self.rows[0].get("marks_known", True)
+                    else "  (mark counts need supabase_retire_clips.sql)"))
+        if shown:
+            self.empty_lbl.place_forget()
+        else:
+            self.empty_lbl.configure(text="No clips match.")
+            self.empty_lbl.place(relx=.5, rely=.35, anchor="center")
         self._sync_buttons()
 
     def _selected(self) -> dict | None:
         sel = self.tree.selection()
-        if not sel:
-            return None
-        return next((r for r in self.rows if r["id"] == sel[0]), None)
+        return next((r for r in self.rows if sel and r["id"] == sel[0]), None)
 
     def _sync_buttons(self):
         row = self._selected()
         active = bool(row) and row.get("active") is not False
         marks = row.get("marks") if row else None
+        self.play_btn.configure(state="normal" if row else "disabled")
         self.retire_btn.configure(state="normal" if active else "disabled")
         self.restore_btn.configure(state="disabled" if (not row or active) else "normal")
         self.replace_btn.configure(state="normal" if row else "disabled")
         # Deleting cascades into the marks, so it is offered only when we KNOW
         # there are none. An unknown count (no migration) counts as "has marks".
-        self.delete_btn.configure(
-            state="normal" if (row and marks == 0) else "disabled")
+        self.delete_btn.configure(state="normal" if (row and marks == 0) else "disabled")
 
     def _after_change(self):
         """Move the recording to match (taken_down/ or back), then redraw."""
         run_sync(self._sb(), self.app.gather(), self.app.write_log)
         self.app.scan()
         self.refresh()
+
+    # ---------- play ----------
+    def play(self, prefer: str = "local"):
+        row = self._selected()
+        if not row:
+            return
+        f = self.files.get(row["id"], {})
+        local = f.get("encoded") or f.get("source")
+        if prefer == "local" and local:
+            self.app._play(local, f"{row.get('title')}, on this laptop")
+        else:
+            self.play_online(row)
+
+    def play_online(self, row: dict):
+        import urllib.parse
+        import webbrowser
+        url = PUBLIC_URL + urllib.parse.quote(row.get("storage_path") or "")
+        webbrowser.open(url)
+        self.app.write_log(f"Opened {row.get('title')} from the site in the browser.")
+
+    def _menu(self, event):
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return
+        self.tree.selection_set(iid)
+        row = self._selected()
+        f = self.files.get(row["id"], {})
+        active = row.get("active") is not False
+        m = tk.Menu(self, tearoff=0, bg=SURFACE_2, fg=INK, activebackground=TEAL_DARK,
+                    activeforeground=INK, bd=0, font=(FONT, 10))
+        m.add_command(label="Play encoded copy (as on the site)",
+                      command=lambda: self.app._play(f.get("encoded"), "encoded"),
+                      state="normal" if f.get("encoded") else "disabled")
+        m.add_command(label="Play original recording",
+                      command=lambda: self.app._play(f.get("source"), "original recording"),
+                      state="normal" if f.get("source") else "disabled")
+        m.add_command(label="Stream from the site (browser)",
+                      command=lambda: self.play_online(row))
+        m.add_separator()
+        if active:
+            m.add_command(label="Take down...", command=self.retire)
+        else:
+            m.add_command(label="Put back", command=self.restore)
+        m.add_command(label="Replace file...", command=self.replace)
+        m.tk_popup(event.x_root, event.y_root)
 
     # ---------- actions ----------
     def retire(self):
@@ -1413,7 +1766,7 @@ class LibraryWindow(tk.Toplevel):
                  f"\n\nIts {marks} existing mark(s) are kept and stay analysable.")
         if not messagebox.askyesno(
                 "Take this clip down?",
-                f"Clip #{row.get('video_number')} - {row.get('title')}\n\n"
+                f"{row.get('title')}  (clip #{row.get('video_number')})\n\n"
                 f"It stops being served to participants straight away."
                 f"{extra}\n\nYou can put it back at any time.",
                 parent=self):
@@ -1425,8 +1778,7 @@ class LibraryWindow(tk.Toplevel):
         except Exception as exc:
             messagebox.showerror("Could not take it down", str(exc), parent=self)
             return
-        self.app.write_log(f"Took down clip #{row.get('video_number')} "
-                           f"({row.get('storage_path')}).", "warn")
+        self.app.write_log(f"Took down {row.get('title')} ({row.get('storage_path')}).", "warn")
         self._after_change()
 
     def restore(self):
@@ -1438,7 +1790,7 @@ class LibraryWindow(tk.Toplevel):
         except Exception as exc:
             messagebox.showerror("Could not put it back", str(exc), parent=self)
             return
-        self.app.write_log(f"Put clip #{row.get('video_number')} back on the site.", "good")
+        self.app.write_log(f"Put {row.get('title')} back on the site.", "good")
         self._after_change()
 
     def delete(self):
@@ -1447,7 +1799,7 @@ class LibraryWindow(tk.Toplevel):
             return
         if not messagebox.askyesno(
                 "Delete permanently?",
-                f"Clip #{row.get('video_number')} - {row.get('title')}\n\n"
+                f"{row.get('title')}  (clip #{row.get('video_number')})\n\n"
                 "Nothing has marked this clip, so no study data is lost.\n"
                 "The row and its file are removed for good. This cannot be undone.",
                 parent=self):
@@ -1460,8 +1812,8 @@ class LibraryWindow(tk.Toplevel):
         except Exception as exc:
             messagebox.showerror("Could not delete", str(exc), parent=self)
             return
-        self.app.write_log(f"Deleted clip #{row.get('video_number')} "
-                           f"({row.get('storage_path')}) - it had no marks.", "warn")
+        self.app.write_log(f"Deleted {row.get('title')} ({row.get('storage_path')}) "
+                           f"- it had no marks.", "warn")
         self.refresh()
 
     def replace(self):
@@ -1469,7 +1821,7 @@ class LibraryWindow(tk.Toplevel):
         if not row:
             return
         video = filedialog.askopenfilename(
-            title=f"Corrected recording for clip #{row.get('video_number')}",
+            title=f"Corrected recording for {row.get('title')}",
             initialdir=self.app.src_var.get() or ROOT,
             filetypes=[("Video", "*.mp4 *.mov *.mkv *.avi"), ("All files", "*.*")],
             parent=self)
@@ -1493,24 +1845,22 @@ class LibraryWindow(tk.Toplevel):
                 messagebox.showerror("Could not read that recording", clip.note, parent=self)
                 return
         else:
-            # No sidecar: the clip still plays, it just has no release frame, so
-            # the site times from the start of the video (and there is nothing
-            # to burn a flash onto).
+            # No sidecar: the clip still plays, it just has no release frame.
             clip = Clip(video=vp, stamp=vp)
 
         if not messagebox.askyesno(
                 "Replace this clip?",
-                f"Clip #{row.get('video_number')} - {row.get('title')}\n\n"
+                f"{row.get('title')}  (clip #{row.get('video_number')})\n\n"
                 f"New file: {vp.name}\n\n"
-                "The version on the site now is retired (its marks are kept), and "
-                "this recording goes up in its place under the same clip number.",
+                "The version on the site now is taken down (its marks are kept), and "
+                "this recording goes up in its place under the same name.",
                 parent=self):
             return
         reason = simpledialog.askstring(
             "Why?", "A short note for the record (optional):", parent=self) or ""
 
-        self.app.write_log(f"Replacing clip #{row.get('video_number')} with {vp.name} ...")
-        self.status.configure(text="Replacing - see the main window's log")
+        self.app.write_log(f"Replacing {row.get('title')} with {vp.name} ...")
+        self.count_lbl.configure(text="Replacing - see Activity below")
         Replacer(row, clip, self.app.gather(), reason, self.app.events).start()
 
 
