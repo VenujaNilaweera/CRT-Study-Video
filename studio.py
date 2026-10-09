@@ -560,6 +560,86 @@ def run_sync(sb: "Supabase", s: "Settings", log) -> None:
 
 
 # ===========================================================================
+#  The first 10 - starred recordings -> videos.core_order on the site
+# ===========================================================================
+#  The stars live on this laptop (studio_config.json) until they are pushed,
+#  so a recording can be starred before it is even uploaded. Process & Upload
+#  and Sync names & folders push them: each starred recording that is on the
+#  site gets its position (1 = first), every other clip loses its position.
+CORE_SIZE = 10                                         # clips in the hand-picked first set
+
+
+def _site_ids_by_recording(src_dir) -> dict[str, str]:
+    """recording filename -> the site clip its stamp names (written by a sync)."""
+    out: dict[str, str] = {}
+    for c in crt_local.local_clips(src_dir):
+        info = (crt_local.read_stamp(c.stamp) or {}).get(crt_local.SITE_KEY) or {}
+        if info.get("video_id"):
+            out.setdefault(c.name, info["video_id"])
+    return out
+
+
+def resolve_core_picks(rows: list[dict], picks: list[str], src_dir):
+    """(name, video_id) for each starred recording live on the site, in star
+    order, plus the names not on the site yet."""
+    live = {r["id"]: r for r in rows if r.get("id") and r.get("active") is not False}
+    by_stamp = {n: v for n, v in _site_ids_by_recording(src_dir).items() if v in live}
+    by_path: dict[str, str] = {}
+    for r in live.values():
+        by_path.setdefault(r.get("storage_path"), r["id"])
+    found, missing, used = [], [], set()
+    for name in picks:
+        vid = by_stamp.get(name) or by_path.get(name)
+        if vid and vid not in used:
+            found.append((name, vid))
+            used.add(vid)
+        else:
+            missing.append(name)
+    return found[:CORE_SIZE], missing
+
+
+def core_names_from_rows(rows: list[dict], src_dir) -> list[str]:
+    """The site's current first 10 as recording filenames, in order."""
+    name_of = {v: n for n, v in _site_ids_by_recording(src_dir).items()}
+    core = sorted((r for r in rows if r.get("core_order") is not None
+                   and r.get("active") is not False), key=lambda r: r["core_order"])
+    return [n for n in (name_of.get(r["id"]) or r.get("storage_path") for r in core) if n]
+
+
+def push_core(sb: "Supabase", s: "Settings", log) -> bool | None:
+    """Make the site's first 10 match the stars. True = every star is on the
+    site now, False = some starred recordings are not uploaded yet,
+    None = nothing could be saved."""
+    picks = list(s.extras.get("core_picks") or [])
+    try:
+        rows = sb.library()
+        if rows and "core_order" not in rows[0]:
+            log("First 10 not saved - run supabase_core_clips.sql in Supabase first.", "error")
+            return None
+        found, missing = resolve_core_picks(rows, picks, s.src_dir)
+        wanted = {vid: i for i, (_n, vid) in enumerate(found, 1)}
+        changes = [(r["id"], wanted.get(r["id"])) for r in rows
+                   if r.get("core_order") != wanted.get(r["id"])]
+        for vid, _pos in changes:                      # free every slot involved first:
+            sb.set_core(vid, None)                     # each position is unique
+        for vid, pos in changes:
+            if pos is not None:
+                sb.set_core(vid, pos)
+    except Exception as exc:
+        log(f"Could not save the first 10: {exc}", "error")
+        return None
+    if changes:
+        log(f"First 10 saved on the site ({len(found)} clip(s)): "
+            + ", ".join(n for n, _v in found), "good")
+    else:
+        log(f"First 10 already up to date on the site ({len(found)} clip(s)).", "good")
+    if missing:
+        log(f"{len(missing)} starred recording(s) are not on the site yet - they join "
+            f"the first 10 once uploaded: " + ", ".join(missing), "warn")
+    return not missing
+
+
+# ===========================================================================
 #  The pipeline (runs off the UI thread)
 # ===========================================================================
 class Pipeline(threading.Thread):
@@ -754,6 +834,8 @@ class Pipeline(threading.Thread):
                  "good" if not failed else "warn")
         if done:
             run_sync(sb, self.s, self.log)
+        if self.s.extras.get("core_dirty"):
+            self.emit("core_synced", complete=push_core(sb, self.s, self.log))
         if done:
             self.log("Reload the study site to see them (hard-refresh).", "good")
         self.emit("finished", ok=failed == 0)
@@ -923,8 +1005,6 @@ MONO = "Consolas"
 ROW_ALT = "#131a1d"                                    # zebra stripe
 HOVER = "#243035"
 
-CORE_SIZE = 10                                         # clips in the hand-picked first set
-
 STATUS_LABEL = {
     "waiting":   "New",
     "skipped":   "On site",
@@ -1020,6 +1100,10 @@ class App(tk.Tk):
         self.filter = tk.StringVar(value="All")
         self.search = tk.StringVar()
         self.checked: set[str] = set()                 # recordings ticked for upload
+        # The starred first 10 (recording filenames, in order) and whether
+        # they still have to be pushed to the site.
+        self.core_picks: list[str] = list(self.settings.extras.get("core_picks") or [])
+        self.core_dirty: bool = bool(self.settings.extras.get("core_dirty"))
 
         self._build_style()
         self._build_ui()
@@ -1027,6 +1111,7 @@ class App(tk.Tk):
         self.write_log("Studio started.", "info")
         if Path(self.settings.src_dir).exists():
             self.scan()
+        self.after(300, self._load_site_core)
 
     # kept for code that still asks the app for a button
     def _btn(self, parent, text, cmd, kind="primary"):
@@ -1137,7 +1222,7 @@ class App(tk.Tk):
         bar.pack(fill="x")
         seg = ttk.Frame(bar, style="Card.TFrame")
         seg.pack(side="left")
-        for name in ("All", "New", "On site", "Failed"):
+        for name in ("All", "First 10", "New", "On site", "Failed"):
             ttk.Radiobutton(seg, text=name, value=name, variable=self.filter,
                             style="Seg.TRadiobutton",
                             command=self._fill_recordings).pack(side="left", padx=(0, 2))
@@ -1151,20 +1236,22 @@ class App(tk.Tk):
 
         bar2 = ttk.Frame(parent, style="Card.TFrame", padding=(14, 0, 14, 8))
         bar2.pack(fill="x")
-        ttk.Label(bar2, text="Tick to upload (box or Space)  \u00b7  double-click to play  "
-                             "\u00b7  right-click for more",
+        ttk.Label(bar2, text="\u2610 upload  \u00b7  \u2606 first 10  \u00b7  double-click plays",
                   style="CardDim.TLabel").pack(side="left")
         HoverButton(bar2, "Clear ticks", self._untick_all, "link").pack(side="right")
         HoverButton(bar2, "Tick all new", self._tick_all_new, "link").pack(side="right")
         self.tick_lbl = ttk.Label(bar2, text="", style="Card.TLabel")
         self.tick_lbl.pack(side="right", padx=(0, 10))
+        self.core_state = tk.Label(bar2, text="", bg=SURFACE, fg=TEAL, font=(FONT, 9))
+        self.core_state.pack(side="right", padx=(0, 16))
 
         wrap = ttk.Frame(parent, style="Card.TFrame")
         wrap.pack(fill="both", expand=True, padx=1, pady=(0, 1))
-        cols = ("pick", "name", "site", "frames", "release", "status", "note")
+        cols = ("pick", "star", "name", "site", "frames", "release", "status", "note")
         self.tree = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="browse")
         for cid, label, w, anchor in (
             ("pick", "\u2611", 46, "center"),
+            ("star", "\u2605 First 10", 96, "center"),
             ("name", "Recording", 260, "w"),
             ("site", "Site name", 110, "w"),
             ("frames", "Frames", 80, "center"),
@@ -1390,16 +1477,17 @@ class App(tk.Tk):
     def _click(self, event):
         if self.tree.identify_region(event.x, event.y) != "cell":
             return
-        if self.tree.identify_column(event.x) != "#1":
+        col = self.tree.identify_column(event.x)
+        if col not in ("#1", "#2"):
             return
         row = self.tree.identify_row(event.y)
         if row:
             self.tree.selection_set(row)
-            self._toggle(row)
+            (self._toggle if col == "#1" else self._toggle_star)(row)
             return "break"
 
     def _double_click(self, event):
-        if self.tree.identify_column(event.x) == "#1":
+        if self.tree.identify_column(event.x) in ("#1", "#2"):
             return "break"                             # fast double-tick, not play
         self._play_selected()
 
@@ -1419,8 +1507,82 @@ class App(tk.Tk):
         if not (self.pipeline and self.pipeline.is_alive()):
             self.go_btn.configure(text=f"Upload {n} ticked" if n else "Process & Upload")
 
+    # ---------- stars: the first 10 ----------
+    def _star_mark(self, clip: Clip) -> str:
+        if clip.name in self.core_picks:
+            return f"\u2605 {self.core_picks.index(clip.name) + 1}"
+        return "\u2606"
+
+    def _save_core(self):
+        self.settings.extras["core_picks"] = list(self.core_picks)
+        self.settings.extras["core_dirty"] = self.core_dirty
+        try:
+            self.settings.save()
+        except Exception:
+            pass
+        n = len(self.core_picks)
+        if not n and not self.core_dirty:
+            self.core_state.configure(text="")
+        elif self.core_dirty:
+            self.core_state.configure(
+                text=f"\u2605 {n}/{CORE_SIZE} \u00b7 unsaved - Upload or Sync",
+                fg=AMBER)
+        else:
+            self.core_state.configure(text=f"\u2605 {n}/{CORE_SIZE} \u00b7 saved on the site",
+                                      fg=TEAL)
+
+    def _toggle_star(self, name: str):
+        if name in self.core_picks:
+            self.core_picks.remove(name)
+            self.write_log(f"Unstarred {name} - first 10 now {len(self.core_picks)}.")
+        elif len(self.core_picks) >= CORE_SIZE:
+            messagebox.showinfo("First 10 is full",
+                                f"Unstar one of the {CORE_SIZE} first.", parent=self)
+            return
+        else:
+            self.core_picks.append(name)
+            self.write_log(f"Starred {name} as first-10 #{len(self.core_picks)}.")
+        self.core_dirty = True
+        self._save_core()
+        keep = self.tree.selection()
+        self._fill_recordings()
+        if keep and self.tree.exists(keep[0]):
+            self.tree.selection_set(keep[0])
+
+    def _adopt_site_core(self, rows: list[dict], merge_pending: bool = False):
+        """Show the site's first 10 as stars. Unsaved local stars win, unless
+        the site was just changed from the On the site tab - then the site's
+        order is taken and only stars not uploaded yet are kept on the end."""
+        if not rows or "core_order" not in rows[0]:
+            return
+        site = core_names_from_rows(rows, self.src_var.get())
+        if merge_pending:
+            _found, missing = resolve_core_picks(rows, self.core_picks, self.src_var.get())
+            pending = [n for n in missing if n not in site]
+            self.core_picks = (site + pending)[:CORE_SIZE]
+            self.core_dirty = bool(pending)
+        elif not self.core_dirty:
+            self.core_picks = site
+        else:
+            return
+        self._save_core()
+        self._fill_recordings()
+
+    def _load_site_core(self):
+        """Fetch the site's first 10 in the background at start-up."""
+        self._save_core()
+        key = self.key_var.get().strip()
+        if not key:
+            return
+        def work():
+            try:
+                self.events.put({"kind": "site_rows", "rows": Supabase(key).library()})
+            except Exception:
+                pass
+        threading.Thread(target=work, daemon=True).start()
+
     def _row_values(self, clip: Clip):
-        return (self._tick_mark(clip), clip.name, clip.site_title or "—", clip.frame_count or "—",
+        return (self._tick_mark(clip), self._star_mark(clip), clip.name, clip.site_title or "—", clip.frame_count or "—",
                 clip.stamped_frame if clip.stamped_frame is not None else "—",
                 STATUS_LABEL.get(clip.status, clip.status), clip.note)
 
@@ -1429,7 +1591,11 @@ class App(tk.Tk):
         q = self._query()
         self.tree.delete(*self.tree.get_children())
         shown = 0
-        for clip in self.clips:
+        clips = self.clips
+        if want == "First 10":
+            by_name = {c.name: c for c in self.clips}
+            clips = [by_name[n] for n in self.core_picks if n in by_name]
+        for clip in clips:
             label = STATUS_LABEL.get(clip.status, clip.status)
             if want == "New" and clip.status != "waiting":
                 continue
@@ -1588,7 +1754,13 @@ class App(tk.Tk):
             return
         self.write_log("Syncing site names and folders ...")
         self.update_idletasks()
-        run_sync(Supabase(s.service_key), s, self.write_log)
+        sb = Supabase(s.service_key)
+        run_sync(sb, s, self.write_log)
+        if self.core_dirty:
+            ok = push_core(sb, s, self.write_log)
+            if ok is not None:
+                self.core_dirty = not ok
+                self._save_core()
         self.scan()
         self.lib_tab.refresh(quiet=True)
 
@@ -1640,6 +1812,13 @@ class App(tk.Tk):
                 elif kind == "replaced":
                     self.scan()                        # the old recording may have moved
                     self.lib_tab.refresh(quiet=True)
+                elif kind == "core_synced":
+                    if ev.get("complete") is not None:
+                        self.core_dirty = not ev["complete"]
+                        self._save_core()
+                        self._fill_recordings()
+                elif kind == "site_rows":
+                    self._adopt_site_core(ev["rows"])
         except queue.Empty:
             pass
         self.after(80, self._drain)
@@ -1765,6 +1944,7 @@ class LibraryPanel(ttk.Frame):
         self.files = local_files_by_clip(self.app.src_var.get(), self.app.work_var.get())
         self.loaded = True
         self._fill()
+        self.app._adopt_site_core(self.rows)
 
     def _empty(self, text):
         self.tree.delete(*self.tree.get_children())
@@ -1928,6 +2108,7 @@ class LibraryPanel(ttk.Frame):
         self.app.write_log(msg, "good")
         keep = self.tree.selection()
         self.refresh()
+        self.app._adopt_site_core(self.rows, merge_pending=True)
         if keep and self.tree.exists(keep[0]):
             self.tree.selection_set(keep[0])
             self.tree.see(keep[0])
