@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- ?v= is bumped on every styles.css change. Without it a browser can pair
      NEW html with a CACHED old stylesheet, which renders the page unstyled. -->
-<link rel="stylesheet" href="styles.css?v=41">
+<link rel="stylesheet" href="styles.css?v=42">
 <script>
   // Dark is the DEFAULT for this study - clips are judged on subtle skin
   // colour change, and a dark surround keeps the eye adapted and stops the
@@ -1744,7 +1744,7 @@ const SUPA_HEADERS = {
         </div>
         <div class="run-head-right">
           <button class="btn neutral small howto-top" title="Watch a quick demo of how this works"
-                  onclick="window.__act('howto')">${icon('help', 15)} How it works</button>
+                  onclick="window.__act('howto')" aria-label="How it works">${icon('help', 15)}<span class="howto-label"> How it works</span></button>
           <span class="progress-pill">${doneHere} of ${total} done${setNumber() > 1 ? ` · set ${setNumber()}` : ''}</span>
         </div>
       </div>

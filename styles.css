@@ -1988,3 +1988,20 @@ kbd {
 /* Auto-hiding header (JS toggles .hdr-hidden on scroll-down to free space). */
 .hdr { transition: transform .25s ease; will-change: transform; }
 .hdr.hdr-hidden { transform: translateY(-100%); }
+
+/* Phones: the run header stays on ONE line - Pause, "Clip 1 of 20", a
+   question-mark button for How it works, and a compact progress pill. On the
+   narrowest screens the pill goes: the title already says where you are. */
+@media (max-width: 600px) {
+  .run-head { flex-wrap: nowrap; gap: 8px; }
+  .player-title { gap: 8px; flex: 1 1 auto; }
+  .player-title h2 { font-size: 19px; }
+  .player-back { padding: 8px 11px; font-size: 13px; }
+  .run-head-right { gap: 6px; flex: none; }
+  .howto-top { padding: 8px; }
+  .howto-label { display: none; }
+  .progress-pill { padding: 4px 8px; font-size: 11px; white-space: nowrap; }
+}
+@media (max-width: 380px) {
+  .run-head .progress-pill { display: none; }
+}
