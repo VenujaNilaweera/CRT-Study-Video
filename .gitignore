@@ -60,4 +60,5 @@ videos/
 
 # Supabase service key / local uploader settings - NEVER commit
 studio_config.json
+studio_log.txt
 .env
